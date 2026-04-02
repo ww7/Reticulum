@@ -438,6 +438,7 @@ class BackboneClientInterface(Interface):
     DEFAULT_IFAC_SIZE = 16
     AUTOCONFIGURE_MTU = True
     MAX_FRAME_BUFFER = 16 * 1024 * 1024  # 16MB cap to prevent unbounded growth
+    MAX_TRANSMIT_BUFFER = 16 * 1024 * 1024  # 16MB cap for outbound queue
 
     RECONNECT_WAIT = 5
     RECONNECT_MAX_WAIT = 300
@@ -637,6 +638,9 @@ class BackboneClientInterface(Interface):
         if self.online and not self.detached:
             try:
                 self.transmit_buffer += bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                if len(self.transmit_buffer) > BackboneClientInterface.MAX_TRANSMIT_BUFFER:
+                    RNS.log(f"Transmit buffer overflow on {self}, dropping oldest data ({len(self.transmit_buffer)} bytes)", RNS.LOG_WARNING)
+                    self.transmit_buffer = self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:]
                 BackboneInterface.tx_ready(self)
 
             except Exception as e:
