@@ -142,6 +142,7 @@ class Transport:
     start_time                  = None
     jobs_locked                 = False
     jobs_running                = False
+    _jobs_event                 = threading.Event()  # Set when jobs are NOT running
     hashlist_maxsize            = 1000000
     job_interval                = 0.250
     links_last_checked          = 0.0
@@ -179,6 +180,7 @@ class Transport:
     @staticmethod
     def start(reticulum_instance):
         Transport.jobs_running = True
+        Transport._jobs_event.clear()
         Transport.owner = reticulum_instance
 
         if Transport.identity == None:
@@ -248,6 +250,7 @@ class Transport:
         
         # Start job loops
         Transport.jobs_running = False
+        Transport._jobs_event.set()  # Signal: jobs not running, safe to proceed
         threading.Thread(target=Transport.jobloop, daemon=True).start()
         threading.Thread(target=Transport.count_traffic_loop, daemon=True).start()
 
@@ -461,6 +464,7 @@ class Transport:
         path_requests = {}
         blocked_if = None
         Transport.jobs_running = True
+        Transport._jobs_event.clear()  # Signal: jobs running, block outbound/inbound
 
         try:
             if not Transport.jobs_locked:
@@ -896,6 +900,7 @@ class Transport:
             RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
 
         Transport.jobs_running = False
+        Transport._jobs_event.set()  # Signal: jobs done, unblock outbound/inbound
 
         for packet in outgoing: packet.send()
 
@@ -954,7 +959,7 @@ class Transport:
 
     @staticmethod
     def outbound(packet):
-        while (Transport.jobs_running): sleep(0.0005)
+        Transport._jobs_event.wait()  # Block until jobs() finishes, no busy-wait
 
         Transport.jobs_locked = True
 
@@ -1319,8 +1324,7 @@ class Transport:
         else:
             return
 
-        while (Transport.jobs_running):
-            sleep(0.0005)
+        Transport._jobs_event.wait()  # Block until jobs() finishes, no busy-wait
 
         if Transport.identity == None:
             return
