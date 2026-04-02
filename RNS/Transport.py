@@ -36,6 +36,7 @@ import math
 import struct
 import inspect
 import threading
+import collections
 from time import sleep
 from threading import Lock
 from .vendor import umsgpack as umsgpack
@@ -132,9 +133,9 @@ class Transport:
     # Reticulum instance
     local_client_interfaces     = []
 
-    local_client_rssi_cache     = []
-    local_client_snr_cache      = []
-    local_client_q_cache        = []
+    local_client_rssi_cache     = collections.deque(maxlen=512)
+    local_client_snr_cache      = collections.deque(maxlen=512)
+    local_client_q_cache        = collections.deque(maxlen=512)
     LOCAL_CLIENT_CACHE_MAXSIZE  = 512
 
     pending_local_path_requests = {}
@@ -1344,22 +1345,16 @@ class Transport:
                 if interface.r_stat_rssi != None:
                     packet.rssi = interface.r_stat_rssi
                     Transport.local_client_rssi_cache.append([packet.packet_hash, packet.rssi])
-                    while len(Transport.local_client_rssi_cache) > Transport.LOCAL_CLIENT_CACHE_MAXSIZE:
-                        Transport.local_client_rssi_cache.pop(0)
 
             if hasattr(interface, "r_stat_snr"):
                 if interface.r_stat_rssi != None:
                     packet.snr = interface.r_stat_snr
                     Transport.local_client_snr_cache.append([packet.packet_hash, packet.snr])
-                    while len(Transport.local_client_snr_cache) > Transport.LOCAL_CLIENT_CACHE_MAXSIZE:
-                        Transport.local_client_snr_cache.pop(0)
 
             if hasattr(interface, "r_stat_q"):
                 if interface.r_stat_q != None:
                     packet.q = interface.r_stat_q
                     Transport.local_client_q_cache.append([packet.packet_hash, packet.q])
-                    while len(Transport.local_client_q_cache) > Transport.LOCAL_CLIENT_CACHE_MAXSIZE:
-                        Transport.local_client_q_cache.pop(0)
 
         if len(Transport.local_client_interfaces) > 0:
             if Transport.is_local_client_interface(interface):
