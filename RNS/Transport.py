@@ -474,6 +474,7 @@ class Transport:
                 # Process active and pending link lists
                 if time.time() > Transport.links_last_checked+Transport.links_check_interval:
 
+                    closed_pending = []
                     for link in Transport.pending_links:
                         if link.status == RNS.Link.CLOSED:
                             # If we are not a Transport Instance, finding a pending link
@@ -496,11 +497,18 @@ class Transport:
                                             blocked_if = None
                                             path_requests[link.destination.hash] = blocked_if
 
-                            Transport.pending_links.remove(link)
+                            closed_pending.append(link)
 
+                    for link in closed_pending:
+                        Transport.pending_links.remove(link)
+
+                    closed_active = []
                     for link in Transport.active_links:
                         if link.status == RNS.Link.CLOSED:
-                            Transport.active_links.remove(link)
+                            closed_active.append(link)
+
+                    for link in closed_active:
+                        Transport.active_links.remove(link)
 
                     Transport.links_last_checked = time.time()
 
@@ -512,11 +520,15 @@ class Transport:
                         culled_receipt.check_timeout()
                         should_collect = True
 
+                    completed_receipts = []
                     for receipt in Transport.receipts:
                         receipt.check_timeout()
                         if receipt.status != RNS.PacketReceipt.SENT:
-                            if receipt in Transport.receipts:
-                                Transport.receipts.remove(receipt)
+                            completed_receipts.append(receipt)
+
+                    for receipt in completed_receipts:
+                        if receipt in Transport.receipts:
+                            Transport.receipts.remove(receipt)
 
                     Transport.receipts_last_checked = time.time()
 
