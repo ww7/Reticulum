@@ -380,7 +380,7 @@ class Transport:
         Transport.prioritize_interfaces()
 
         # Synthesize tunnels for any interfaces wanting it
-        for interface in Transport.interfaces:
+        for interface in list(Transport.interfaces):
             interface.tunnel_id = None
             if hasattr(interface, "wants_tunnel") and interface.wants_tunnel:
                 Transport.synthesize_tunnel(interface)
@@ -426,7 +426,7 @@ class Transport:
             try:
                 rxb = 0; txb = 0;
                 rxs = 0; txs = 0;
-                for interface in Transport.interfaces:
+                for interface in list(Transport.interfaces):
                     if not hasattr(interface, "parent_interface") or interface.parent_interface == None:
                         if hasattr(interface, "transport_traffic_counter"):
                             now = time.time(); irxb = interface.rxb; itxb = interface.txb
@@ -857,7 +857,7 @@ class Transport:
                 # Run interface-related jobs
                 if time.time() > Transport.interface_last_jobs + Transport.interface_jobs_interval:
                     Transport.prioritize_interfaces()
-                    for interface in Transport.interfaces:
+                    for interface in list(Transport.interfaces):
                         interface.process_held_announces()
                     Transport.interface_last_jobs = time.time()
 
@@ -921,7 +921,7 @@ class Transport:
             blocked_if = path_requests[destination_hash]
             if blocked_if == None: Transport.request_path(destination_hash)
             else:
-                for interface in Transport.interfaces:
+                for interface in list(Transport.interfaces):
                     if interface != blocked_if: Transport.request_path(destination_hash, on_interface=interface)
                     else: pass
 
@@ -1059,7 +1059,7 @@ class Transport:
         # interface, or belongs to a link.
         else:
             stored_hash = False
-            for interface in Transport.interfaces:
+            for interface in list(Transport.interfaces):
                 if interface.OUT:
                     should_transmit = True
 
@@ -1416,7 +1416,7 @@ class Transport:
                 if packet.destination_type == RNS.Destination.PLAIN and packet.transport_type == Transport.BROADCAST:
                     # Send to all interfaces except the originator
                     if from_local_client:
-                        for interface in Transport.interfaces:
+                        for interface in list(Transport.interfaces):
                             if interface != packet.receiving_interface:
                                 Transport.transmit(interface, packet.raw)
                     # If the packet was not from a local client, send
@@ -2315,7 +2315,7 @@ class Transport:
 
     @staticmethod
     def find_interface_from_hash(interface_hash):
-        for interface in Transport.interfaces:
+        for interface in list(Transport.interfaces):
             if interface.get_hash() == interface_hash:
                 return interface
 
@@ -2393,7 +2393,7 @@ class Transport:
                 packet = RNS.Packet(None, cached_data[0])
                 interface_reference = cached_data[1]
 
-                for interface in Transport.interfaces:
+                for interface in list(Transport.interfaces):
                     if str(interface) == interface_reference:
                         packet.receiving_interface = interface
 
@@ -2815,7 +2815,7 @@ class Transport:
             # except the local client
             RNS.log("Forwarding path request from local client for "+RNS.prettyhexrep(destination_hash)+interface_str+" to all other interfaces", RNS.LOG_DEBUG)
             request_tag = RNS.Identity.get_random_hash()
-            for interface in Transport.interfaces:
+            for interface in list(Transport.interfaces):
                 if not interface == attached_interface:
                     Transport.request_path(destination_hash, interface, tag = request_tag)
 
@@ -2829,7 +2829,7 @@ class Transport:
                 pr_entry = { "destination_hash": destination_hash, "timeout": time.time()+Transport.PATH_REQUEST_TIMEOUT, "requesting_interface": attached_interface }
                 Transport.discovery_path_requests[destination_hash] = pr_entry
 
-                for interface in Transport.interfaces:
+                for interface in list(Transport.interfaces):
                     if not interface == attached_interface:
                         # Use the previously extracted tag from this path request
                         # on the new path requests as well, to avoid potential loops
@@ -2873,7 +2873,7 @@ class Transport:
     def detach_interfaces():
         detachable_interfaces = []
 
-        for interface in Transport.interfaces:
+        for interface in list(Transport.interfaces):
             # Currently no rules are being applied
             # here, and all interfaces will be sent
             # the detach call on RNS teardown.
@@ -2950,7 +2950,7 @@ class Transport:
 
     @staticmethod
     def drop_announce_queues():
-        for interface in Transport.interfaces:
+        for interface in list(Transport.interfaces):
             if hasattr(interface, "announce_queue") and interface.announce_queue != None:
                 na = len(interface.announce_queue)
                 if na > 0:

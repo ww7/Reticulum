@@ -1097,7 +1097,7 @@ class Reticulum:
             return response
         else:
             interfaces = []
-            for interface in RNS.Transport.interfaces:
+            for interface in list(RNS.Transport.interfaces):
                 ifstats = {}
                 
                 if hasattr(interface, "clients"):
