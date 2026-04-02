@@ -486,7 +486,7 @@ class InterfaceDiscovery():
             detached_interfaces = []
             online_interfaces = 0
             autoconnected_interfaces = self.autoconnect_count()
-            for interface in self.monitored_interfaces:
+            for interface in list(self.monitored_interfaces):
                 try:
                     if interface.online:
                         online_interfaces += 1
@@ -513,7 +513,7 @@ class InterfaceDiscovery():
             reserved_slots = max_autoconnected_interfaces//4
 
             if online_interfaces >= max_autoconnected_interfaces:
-                for interface in RNS.Transport.interfaces:
+                for interface in list(RNS.Transport.interfaces):
                     if hasattr(interface, "bootstrap_only") and interface.bootstrap_only == True:
                         RNS.log(f"Tearing down bootstrap-only {interface} since target connected auto-discovered interface count has been reached", RNS.LOG_INFO)
                         if not interface in detached_interfaces: detached_interfaces.append(interface)
