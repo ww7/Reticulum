@@ -437,6 +437,7 @@ class BackboneClientInterface(Interface):
     BITRATE_GUESS = 100_000_000
     DEFAULT_IFAC_SIZE = 16
     AUTOCONFIGURE_MTU = True
+    MAX_FRAME_BUFFER = 16 * 1024 * 1024  # 16MB cap to prevent unbounded growth
 
     RECONNECT_WAIT = 5
     RECONNECT_MAX_WAIT = 300
@@ -647,6 +648,9 @@ class BackboneClientInterface(Interface):
         try:
             if len(data_in) > 0:
                 self.frame_buffer += data_in
+                if len(self.frame_buffer) > BackboneClientInterface.MAX_FRAME_BUFFER:
+                    RNS.log(f"Frame buffer overflow on {self}, discarding buffer ({len(self.frame_buffer)} bytes)", RNS.LOG_WARNING)
+                    self.frame_buffer = b""
                 flags_remaining = True
                 while flags_remaining:
                     frame_start = self.frame_buffer.find(HDLC.FLAG)
