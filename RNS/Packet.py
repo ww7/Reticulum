@@ -114,6 +114,11 @@ class Packet:
 
     TIMEOUT_PER_HOP = RNS.Reticulum.DEFAULT_PER_HOP_TIMEOUT
 
+    # Rate limiting for "No interfaces" log spam
+    _no_interface_log_last = 0
+    _no_interface_log_count = 0
+    _no_interface_log_interval = 5  # seconds
+
     __slots__  = "hops", "header", "header_type", "packet_type", "transport_type", "context", "context_flag", "destination"
     __slots__ += "transport_id", "data", "flags", "raw", "packed", "sent", "create_receipt", "receipt", "fromPacked", "MTU"
     __slots__ += "sent_at", "packet_hash", "ratchet_id", "attached_interface", "receiving_interface", "rssi", "snr", "q"
@@ -293,7 +298,16 @@ class Packet:
 
             if RNS.Transport.outbound(self): return self.receipt
             else:
-                RNS.log("No interfaces could process the outbound packet", RNS.LOG_ERROR)
+                now = time.time()
+                Packet._no_interface_log_count += 1
+                if now - Packet._no_interface_log_last >= Packet._no_interface_log_interval:
+                    suppressed = Packet._no_interface_log_count - 1
+                    if suppressed > 0:
+                        RNS.log(f"No interfaces could process outbound packet ({suppressed} similar suppressed)", RNS.LOG_ERROR)
+                    else:
+                        RNS.log("No interfaces could process the outbound packet", RNS.LOG_ERROR)
+                    Packet._no_interface_log_last = now
+                    Packet._no_interface_log_count = 0
                 self.sent = False
                 self.receipt = None
                 return False
@@ -315,7 +329,16 @@ class Packet:
             if RNS.Transport.outbound(self):
                 return self.receipt
             else:
-                RNS.log("No interfaces could process the outbound packet", RNS.LOG_ERROR)
+                now = time.time()
+                Packet._no_interface_log_count += 1
+                if now - Packet._no_interface_log_last >= Packet._no_interface_log_interval:
+                    suppressed = Packet._no_interface_log_count - 1
+                    if suppressed > 0:
+                        RNS.log(f"No interfaces could process outbound packet ({suppressed} similar suppressed)", RNS.LOG_ERROR)
+                    else:
+                        RNS.log("No interfaces could process the outbound packet", RNS.LOG_ERROR)
+                    Packet._no_interface_log_last = now
+                    Packet._no_interface_log_count = 0
                 self.sent = False
                 self.receipt = None
                 return False
