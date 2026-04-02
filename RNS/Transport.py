@@ -2311,8 +2311,8 @@ class Transport:
     def clean_announce_cache():
         st = time.time()
         target_path = os.path.join(RNS.Reticulum.cachepath, "announces")
-        active_paths = [Transport.path_table[dst_hash][6] for dst_hash in Transport.path_table]
-        tunnel_paths = list(set([path_dict[dst_hash][6] for path_dict in [Transport.tunnels[tunnel_id][2] for tunnel_id in Transport.tunnels] for dst_hash in path_dict]))
+        active_paths = set(Transport.path_table[dst_hash][6] for dst_hash in Transport.path_table)
+        tunnel_paths = set(path_dict[dst_hash][6] for path_dict in [Transport.tunnels[tunnel_id][2] for tunnel_id in Transport.tunnels] for dst_hash in path_dict)
         removed = 0
         for packet_hash in os.listdir(target_path):
             remove = False
