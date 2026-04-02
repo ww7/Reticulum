@@ -182,7 +182,7 @@ class BackboneInterface(Interface):
 
         server_socket.listen(512)
         server_socket.setblocking(0)
-        BackboneInterface.listener_filenos[server_socket.fileno()] = (interface, server_socket)
+        BackboneInterface.listener_filenos[server_socket.fileno()] = (interface, server_socket, bind_address, socket_type)
         BackboneInterface.epoll.register(server_socket.fileno(), select.EPOLLIN)
         BackboneInterface.start()
 
@@ -215,8 +215,9 @@ class BackboneInterface(Interface):
 
     @staticmethod
     def deregister_listeners():
-        for fileno in BackboneInterface.listener_filenos:
-            owner_interface, server_socket = BackboneInterface.listener_filenos[fileno]
+        for fileno in list(BackboneInterface.listener_filenos):
+            entry = BackboneInterface.listener_filenos[fileno]
+            owner_interface, server_socket = entry[0], entry[1]
             fileno = server_socket.fileno()
             BackboneInterface.deregister_fileno(fileno)
             server_socket.close()
@@ -315,7 +316,8 @@ class BackboneInterface(Interface):
                                     spawned_interface.receive(b"")
 
                             elif fileno in BackboneInterface.listener_filenos:
-                                owner_interface, server_socket = BackboneInterface.listener_filenos[fileno]
+                                entry = BackboneInterface.listener_filenos[fileno]
+                                owner_interface, server_socket, bind_address, sock_type = entry[0], entry[1], entry[2], entry[3]
                                 if fileno == server_socket.fileno() and (event & select.EPOLLIN):
                                     client_socket, address = server_socket.accept()
                                     client_socket.setblocking(0)
@@ -324,18 +326,28 @@ class BackboneInterface(Interface):
                                         except Exception as e: RNS.log(f"Error while closing socket for failed incoming connection: {e}", RNS.LOG_ERROR)
                                 
                                 elif fileno == server_socket.fileno() and (event & select.EPOLLHUP):
+                                    RNS.log(f"Listener EPOLLHUP on {owner_interface}, recreating listener...", RNS.LOG_WARNING)
                                     try: BackboneInterface.deregister_fileno(fileno)
                                     except Exception as e: RNS.log(f"Error while deregistering listener file descriptor {fileno}: {e}", RNS.LOG_ERROR)
 
                                     try: server_socket.close()
                                     except Exception as e: RNS.log(f"Error while closing listener socket for {server_socket}: {e}", RNS.LOG_ERROR)
 
+                                    # Remove old entry and recreate listener
+                                    try:
+                                        if fileno in BackboneInterface.listener_filenos:
+                                            BackboneInterface.listener_filenos.pop(fileno)
+                                        BackboneInterface.add_listener(owner_interface, bind_address, sock_type)
+                                        RNS.log(f"Listener for {owner_interface} recreated successfully", RNS.LOG_NOTICE)
+                                    except Exception as e:
+                                        RNS.log(f"Could not recreate listener for {owner_interface}: {e}", RNS.LOG_ERROR)
+
                 except Exception as e:
                     RNS.log(f"BackboneInterface error: {e}", RNS.LOG_ERROR)
                     RNS.trace_exception(e)
 
                 finally:
-                    BackboneInterface.deregister_listeners()
+                    BackboneInterface._job_active = False
     
     def incoming_connection(self, socket):
         RNS.log("Accepting incoming connection", RNS.LOG_VERBOSE)
