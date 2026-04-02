@@ -1477,6 +1477,7 @@ class Transport:
                                                 new_raw  = new_raw[:-RNS.Link.LINK_MTU_SIZE]+clamped_mtu
                                             except Exception as e:
                                                 RNS.log(f"Dropping link request packet. The contained exception was: {e}", RNS.LOG_WARNING)
+                                                Transport.jobs_locked = False
                                                 return
 
                                 # Entry format is
@@ -1960,6 +1961,7 @@ class Transport:
                                             packet.data  = packet.data[:-RNS.Link.LINK_MTU_SIZE]+clamped_mtu
                                         except Exception as e:
                                             RNS.log(f"Dropping link request packet to local destination. The contained exception was: {e}", RNS.LOG_WARNING)
+                                            Transport.jobs_locked = False
                                             return
 
                             packet.destination = destination
