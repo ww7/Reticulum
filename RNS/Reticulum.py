@@ -628,7 +628,7 @@ class Reticulum:
                 interface_mode = Interface.Interface.MODE_ROAMING
             elif c["interface_mode"] == "boundary":
                 interface_mode = Interface.Interface.MODE_BOUNDARY
-            elif c["mode"] == "gateway" or c["mode"] == "gw":
+            elif c["interface_mode"] == "gateway" or c["interface_mode"] == "gw":
                 interface_mode = Interface.Interface.MODE_GATEWAY
 
         elif "mode" in c:
