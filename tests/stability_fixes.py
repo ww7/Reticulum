@@ -269,5 +269,95 @@ class TestListenerTupleFormat(unittest.TestCase):
         self.assertNotIn("owner_interface, server_socket = BackboneInterface.listener_filenos[", source)
 
 
+_LINK = os.path.join(_REPO, 'RNS', 'Link.py')
+
+
+class TestLinkSafeIteration(unittest.TestCase):
+    """K011-ext: Link.py iterates over list copies to avoid RuntimeError"""
+
+    def test_link_closed_uses_list_copy(self):
+        """link_closed() should iterate list() copies of resource lists"""
+        source = _read(_LINK)
+        lines = source.split('\n')
+        in_link_closed = False
+        for i, line in enumerate(lines):
+            if 'def link_closed(self):' in line:
+                in_link_closed = True
+                continue
+            if in_link_closed:
+                if line.strip().startswith('def '):
+                    break
+                if 'for resource in self.incoming_resources:' in line:
+                    self.fail(f"Line {i+1}: link_closed() iterates incoming_resources without list() copy")
+                if 'for resource in self.outgoing_resources:' in line:
+                    self.fail(f"Line {i+1}: link_closed() iterates outgoing_resources without list() copy")
+
+    def test_receive_packet_uses_list_copy(self):
+        """receive_packet loops should iterate list() copies"""
+        source = _read(_LINK)
+        lines = source.split('\n')
+        # In receive() or receive_packet(), all `for resource in self.X_resources`
+        # and `for pending_request in self.pending_requests` should use list()
+        unsafe_patterns = [
+            'for resource in self.outgoing_resources:',
+            'for resource in self.incoming_resources:',
+            'for pending_request in self.pending_requests:',
+            'for incoming_resource in self.incoming_resources:',
+        ]
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            for pattern in unsafe_patterns:
+                if stripped == pattern:
+                    self.fail(f"Line {i+1}: unsafe iteration '{pattern}' — should use list() copy")
+
+    def test_list_copy_pattern_present(self):
+        """Verify list() copies are used in Link.py"""
+        source = _read(_LINK)
+        self.assertIn('for resource in list(self.incoming_resources):', source)
+        self.assertIn('for resource in list(self.outgoing_resources):', source)
+        self.assertIn('for pending_request in list(self.pending_requests):', source)
+
+
+class TestLinkSafeIterationConcurrency(unittest.TestCase):
+    """Functional test: modifying a list during iteration of its copy doesn't crash"""
+
+    def test_list_copy_survives_concurrent_modification(self):
+        """Simulate the pattern: iterate copy while another thread modifies original"""
+        items = list(range(100))
+        results = []
+        errors = []
+
+        def modifier():
+            """Continuously add and remove items"""
+            for i in range(100, 200):
+                items.append(i)
+                if len(items) > 50:
+                    try:
+                        items.pop(0)
+                    except IndexError:
+                        pass
+                time.sleep(0.001)
+
+        def iterator():
+            """Iterate over list() copy — should never crash"""
+            for _ in range(50):
+                try:
+                    for item in list(items):
+                        results.append(item)
+                except RuntimeError as e:
+                    errors.append(str(e))
+                time.sleep(0.002)
+
+        t1 = threading.Thread(target=modifier)
+        t2 = threading.Thread(target=iterator)
+        t1.start()
+        t2.start()
+        t1.join(timeout=5)
+        t2.join(timeout=5)
+
+        self.assertEqual(len(errors), 0, f"list() copy should prevent RuntimeError: {errors}")
+        self.assertGreater(len(results), 0, "Iterator should have collected some results")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

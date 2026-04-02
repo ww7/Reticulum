@@ -722,9 +722,9 @@ class Link:
             pass
 
     def link_closed(self):
-        for resource in self.incoming_resources:
+        for resource in list(self.incoming_resources):
             resource.cancel()
-        for resource in self.outgoing_resources:
+        for resource in list(self.outgoing_resources):
             resource.cancel()
         if self._channel:
             self._channel._shutdown()
@@ -910,7 +910,7 @@ class Link:
     def handle_response(self, request_id, response_data, response_size, response_transfer_size, metadata=None):
         if self.status == Link.ACTIVE:
             remove = None
-            for pending_request in self.pending_requests:
+            for pending_request in list(self.pending_requests):
                 if pending_request.request_id == request_id:
                     remove = pending_request
                     try:
@@ -959,7 +959,7 @@ class Link:
 
         else:
             RNS.log("Incoming response resource failed with status: "+RNS.hexrep([resource.status]), RNS.LOG_DEBUG)
-            for pending_request in self.pending_requests:
+            for pending_request in list(self.pending_requests):
                 if pending_request.request_id == resource.request_id:
                     pending_request.request_timed_out(None)
 
@@ -1075,7 +1075,7 @@ class Link:
                                 RNS.Resource.accept(packet, callback=self.request_resource_concluded)
                             elif RNS.ResourceAdvertisement.is_response(packet):
                                 request_id = RNS.ResourceAdvertisement.read_request_id(packet)
-                                for pending_request in self.pending_requests:
+                                for pending_request in list(self.pending_requests):
                                     if pending_request.request_id == request_id:
                                         response_resource = RNS.Resource.accept(packet, callback=self.response_resource_concluded, progress_callback=pending_request.response_resource_progress, request_id = request_id)
                                         if response_resource != None:
@@ -1110,7 +1110,7 @@ class Link:
                             else:
                                 resource_hash = plaintext[1:RNS.Identity.HASHLENGTH//8+1]
 
-                            for resource in self.outgoing_resources:
+                            for resource in list(self.outgoing_resources):
                                 if resource.hash == resource_hash:
                                     # We need to check that this request has not been
                                     # received before in order to avoid sequencing errors.
@@ -1128,7 +1128,7 @@ class Link:
                         if plaintext != None:
                             self.__update_phy_stats(packet, query_shared=True)
                             resource_hash = plaintext[:RNS.Identity.HASHLENGTH//8]
-                            for resource in self.incoming_resources:
+                            for resource in list(self.incoming_resources):
                                 if resource_hash == resource.hash:
                                     resource.hashmap_update_packet(plaintext)
 
@@ -1137,7 +1137,7 @@ class Link:
                         if plaintext != None:
                             self.__update_phy_stats(packet)
                             resource_hash = plaintext[:RNS.Identity.HASHLENGTH//8]
-                            for resource in self.incoming_resources:
+                            for resource in list(self.incoming_resources):
                                 if resource_hash == resource.hash:
                                     resource.cancel()
 
@@ -1146,7 +1146,7 @@ class Link:
                         if plaintext != None:
                             self.__update_phy_stats(packet)
                             resource_hash = plaintext[:RNS.Identity.HASHLENGTH//8]
-                            for resource in self.outgoing_resources:
+                            for resource in list(self.outgoing_resources):
                                 if resource_hash == resource.hash:
                                     resource._rejected()
 
@@ -1162,7 +1162,7 @@ class Link:
                     # each packet is a huge overhead. Probably some kind
                     # of hash -> sequence map
                     elif packet.context == RNS.Packet.RESOURCE:
-                        for resource in self.incoming_resources:
+                        for resource in list(self.incoming_resources):
                             resource.receive_part(packet)
                             self.__update_phy_stats(packet)
 
@@ -1179,7 +1179,7 @@ class Link:
                 elif packet.packet_type == RNS.Packet.PROOF:
                     if packet.context == RNS.Packet.RESOURCE_PRF:
                         resource_hash = packet.data[0:RNS.Identity.HASHLENGTH//8]
-                        for resource in self.outgoing_resources:
+                        for resource in list(self.outgoing_resources):
                             if resource_hash == resource.hash:
                                 def job(): resource.validate_proof(packet.data)
                                 threading.Thread(target=job, daemon=True).start()
@@ -1312,7 +1312,7 @@ class Link:
         self.incoming_resources.append(resource)
 
     def has_incoming_resource(self, resource):
-        for incoming_resource in self.incoming_resources:
+        for incoming_resource in list(self.incoming_resources):
             if incoming_resource.hash == resource.hash:
                 return True
 
