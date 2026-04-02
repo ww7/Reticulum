@@ -159,6 +159,8 @@ class Identity:
         else:
             return None
 
+    _saving_lock = threading.Lock()
+
     @staticmethod
     def save_known_destinations():
         # TODO: Improve the storage method so we don't have to
@@ -167,18 +169,11 @@ class Identity:
         # simply overwrite on exit now that every local client
         # disconnect triggers a data persist.
         
-        try:
-            if hasattr(Identity, "saving_known_destinations"):
-                wait_interval = 0.2
-                wait_timeout = 5
-                wait_start = time.time()
-                while Identity.saving_known_destinations:
-                    time.sleep(wait_interval)
-                    if time.time() > wait_start+wait_timeout:
-                        RNS.log("Could not save known destinations to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
-                        return False
+        if not Identity._saving_lock.acquire(timeout=5):
+            RNS.log("Could not save known destinations to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
+            return False
 
-            Identity.saving_known_destinations = True
+        try:
             save_start = time.time()
 
             storage_known_destinations = {}
@@ -198,8 +193,11 @@ class Identity:
                 RNS.log("Skipped recombining known destinations from disk, since an error occurred: "+str(e), RNS.LOG_WARNING)
 
             RNS.log("Saving "+str(len(Identity.known_destinations))+" known destinations to storage...", RNS.LOG_DEBUG)
-            with open(RNS.Reticulum.storagepath+"/known_destinations","wb") as file:
+            tmp_path = RNS.Reticulum.storagepath+"/known_destinations.tmp"
+            final_path = RNS.Reticulum.storagepath+"/known_destinations"
+            with open(tmp_path, "wb") as file:
                 umsgpack.dump(Identity.known_destinations, file)
+            os.replace(tmp_path, final_path)
             
 
             save_time = time.time() - save_start
@@ -214,7 +212,8 @@ class Identity:
             RNS.log("Error while saving known destinations to disk, the contained exception was: "+str(e), RNS.LOG_ERROR)
             RNS.trace_exception(e)
 
-        Identity.saving_known_destinations = False
+        finally:
+            Identity._saving_lock.release()
 
     @staticmethod
     def load_known_destinations():

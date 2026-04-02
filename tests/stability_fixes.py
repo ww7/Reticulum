@@ -19,6 +19,7 @@ _TCP      = os.path.join(_REPO, 'RNS', 'Interfaces', 'TCPInterface.py')
 _TRANSPORT = os.path.join(_REPO, 'RNS', 'Transport.py')
 _PACKET   = os.path.join(_REPO, 'RNS', 'Packet.py')
 _RETICULUM = os.path.join(_REPO, 'RNS', 'Reticulum.py')
+_IDENTITY  = os.path.join(_REPO, 'RNS', 'Identity.py')
 
 def _read(path):
     with open(path) as f:
@@ -357,6 +358,47 @@ class TestLinkSafeIterationConcurrency(unittest.TestCase):
 
         self.assertEqual(len(errors), 0, f"list() copy should prevent RuntimeError: {errors}")
         self.assertGreater(len(results), 0, "Iterator should have collected some results")
+
+
+class TestSaveKnownDestinationsLock(unittest.TestCase):
+    """Identity.save_known_destinations uses proper Lock, not boolean flag"""
+
+    def test_uses_threading_lock(self):
+        """saving_known_destinations boolean replaced with _saving_lock Lock"""
+        source = _read(_IDENTITY)
+        self.assertIn("_saving_lock = threading.Lock()", source)
+        self.assertIn("_saving_lock.acquire(", source)
+        # Old busy-wait pattern should be gone
+        self.assertNotIn("saving_known_destinations = True", source)
+        self.assertNotIn("while Identity.saving_known_destinations", source)
+
+    def test_atomic_write(self):
+        """save_known_destinations writes to tmp then renames"""
+        source = _read(_IDENTITY)
+        self.assertIn("known_destinations.tmp", source)
+        self.assertIn("os.replace(", source)
+
+    def test_lock_released_in_finally(self):
+        """Lock must be released in finally block"""
+        source = _read(_IDENTITY)
+        # Find save_known_destinations, verify finally: ... release()
+        lines = source.split('\n')
+        in_func = False
+        has_finally = False
+        has_release = False
+        for line in lines:
+            if 'def save_known_destinations' in line:
+                in_func = True
+                continue
+            if in_func:
+                if line.strip().startswith('def ') or line.strip().startswith('@staticmethod'):
+                    break
+                if 'finally:' in line:
+                    has_finally = True
+                if has_finally and '_saving_lock.release()' in line:
+                    has_release = True
+        self.assertTrue(has_finally, "save_known_destinations must use try/finally")
+        self.assertTrue(has_release, "Lock must be released in finally block")
 
 
 if __name__ == '__main__':
