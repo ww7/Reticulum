@@ -243,7 +243,7 @@ class BackboneInterface(Interface):
                 try:
                     while True:
                         events = BackboneInterface.epoll.poll(1)
-                        for fileno, event in BackboneInterface.epoll.poll(1):
+                        for fileno, event in events:
                             if fileno in BackboneInterface.spawned_interface_filenos:
                                 spawned_interface = BackboneInterface.spawned_interface_filenos[fileno]
                                 client_socket = spawned_interface.socket
