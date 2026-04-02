@@ -921,17 +921,19 @@ class Reticulum:
                     else:
                         try:
                             RNS.log(f"Loading external interface \"{interface_file}\" from \"{self.interfacepath}\"", RNS.LOG_NOTICE)
-                            interface_globals = {}
-                            interface_globals["Interface"] = Interface.Interface
-                            interface_globals["RNS"] = RNS
-                            with open(interface_path) as class_file:
-                                interface_code = class_file.read()
-                                exec(interface_code, interface_globals)
-                                interface_class = interface_globals["interface_class"]
-                                
+                            spec = importlib.util.spec_from_file_location(interface_type, interface_path)
+                            if spec and spec.loader:
+                                module = importlib.util.module_from_spec(spec)
+                                module.Interface = Interface.Interface
+                                module.RNS = RNS
+                                spec.loader.exec_module(module)
+                                interface_class = getattr(module, "interface_class", None)
+
                                 if interface_class != None:
                                     interface = interface_class(RNS.Transport, interface_config)
                                     interface_post_init(interface)
+                            else:
+                                RNS.log(f"Could not create module spec for \"{interface_file}\"", RNS.LOG_ERROR)
 
                         except Exception as e:
                             RNS.log(f"External interface initialisation failed for {interface_type} / {name}", RNS.LOG_ERROR)
