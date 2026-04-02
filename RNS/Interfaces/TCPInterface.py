@@ -78,6 +78,7 @@ class TCPClientInterface(Interface):
     AUTOCONFIGURE_MTU = True
 
     RECONNECT_WAIT = 5
+    RECONNECT_MAX_WAIT = 300
     RECONNECT_MAX_TRIES = None
 
     # TCP socket options
@@ -272,8 +273,9 @@ class TCPClientInterface(Interface):
             if not self.reconnecting:
                 self.reconnecting = True
                 attempts = 0
+                wait = TCPClientInterface.RECONNECT_WAIT
                 while not self.online:
-                    time.sleep(TCPClientInterface.RECONNECT_WAIT)
+                    time.sleep(wait)
                     attempts += 1
 
                     if self.max_reconnect_tries != None and attempts > self.max_reconnect_tries:
@@ -286,6 +288,7 @@ class TCPClientInterface(Interface):
 
                     except Exception as e:
                         RNS.log("Connection attempt for "+str(self)+" failed: "+str(e), RNS.LOG_DEBUG)
+                        wait = min(wait * 2, TCPClientInterface.RECONNECT_MAX_WAIT)
 
                 if not self.never_connected:
                     RNS.log("Reconnected socket for "+str(self)+".", RNS.LOG_INFO)
@@ -380,6 +383,9 @@ class TCPClientInterface(Interface):
                     else:
                         # Read loop for standard HDLC framing
                         frame_buffer += data_in
+                        if len(frame_buffer) > 16 * 1024 * 1024:
+                            RNS.log(f"Frame buffer overflow on {self}, discarding buffer ({len(frame_buffer)} bytes)", RNS.LOG_WARNING)
+                            frame_buffer = b""
                         flags_remaining = True
                         while flags_remaining:
                             frame_start = frame_buffer.find(HDLC.FLAG)
