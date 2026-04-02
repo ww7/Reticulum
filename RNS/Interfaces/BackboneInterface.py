@@ -415,7 +415,8 @@ class BackboneInterface(Interface):
         self.online = False
         detached = []
         for fileno in BackboneInterface.listener_filenos:
-            owner_interface, listener_socket = BackboneInterface.listener_filenos[fileno]
+            entry = BackboneInterface.listener_filenos[fileno]
+            owner_interface, listener_socket = entry[0], entry[1]
             if owner_interface == self:
                 if hasattr(listener_socket, "shutdown"):
                     if callable(listener_socket.shutdown):
