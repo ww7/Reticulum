@@ -439,6 +439,7 @@ class BackboneClientInterface(Interface):
     AUTOCONFIGURE_MTU = True
 
     RECONNECT_WAIT = 5
+    RECONNECT_MAX_WAIT = 300
     RECONNECT_MAX_TRIES = None
 
     # TCP socket options
@@ -596,8 +597,9 @@ class BackboneClientInterface(Interface):
             if not self.reconnecting:
                 self.reconnecting = True
                 attempts = 0
+                wait = BackboneClientInterface.RECONNECT_WAIT
                 while not self.online and not self.detached:
-                    time.sleep(BackboneClientInterface.RECONNECT_WAIT)
+                    time.sleep(wait)
                     attempts += 1
 
                     if self.max_reconnect_tries != None and attempts > self.max_reconnect_tries:
@@ -608,6 +610,7 @@ class BackboneClientInterface(Interface):
                     try: self.connect()
                     except Exception as e:
                         RNS.log("Connection attempt for "+str(self)+" failed: "+str(e), RNS.LOG_DEBUG)
+                        wait = min(wait * 2, BackboneClientInterface.RECONNECT_MAX_WAIT)
 
                 if not self.online: return
 
