@@ -2,6 +2,13 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`c9d0d41`](../../commit/c9d0d41) **[HIGH]** Replace busy-wait boolean with Lock and atomic write in save_known_destinations.
+`Identity.save_known_destinations()` used a boolean flag with busy-wait polling (`sleep(0.2)` loop) instead of a proper lock. Also wrote directly to the destination file — a crash mid-write corrupts it.
+
+**Fix:** boolean → `threading.Lock` with 5s timeout. Write to `.tmp` then `os.replace()` for atomic update. Lock released in `finally` block.
+
+---
+
 #### [`ca1fadd`](../../commit/ca1fadd) **[MONITORING]** Add Prometheus metrics exporter for transport nodes.
 No monitoring existed for Reticulum transport nodes. Operators had zero visibility into memory growth, table sizes, interface health, or announce storms.
 
