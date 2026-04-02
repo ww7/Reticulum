@@ -125,6 +125,7 @@ class TCPClientInterface(Interface):
         self.never_connected  = True
         self.owner            = owner
         self.writing          = False
+        self.write_lock       = threading.Lock()
         self.online           = False
         self.detached         = False
         self.kiss_framing     = kiss_framing
@@ -314,27 +315,25 @@ class TCPClientInterface(Interface):
 
     def process_outgoing(self, data):
         if self.online and not self.detached:
-            # while self.writing:
-            #     time.sleep(0.01)
+            with self.write_lock:
+                try:
+                    self.writing = True
 
-            try:
-                self.writing = True
+                    if self.kiss_framing:
+                        data = bytes([KISS.FEND])+bytes([KISS.CMD_DATA])+KISS.escape(data)+bytes([KISS.FEND])
+                    else:
+                        data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
 
-                if self.kiss_framing:
-                    data = bytes([KISS.FEND])+bytes([KISS.CMD_DATA])+KISS.escape(data)+bytes([KISS.FEND])
-                else:
-                    data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                    self.socket.sendall(data)
+                    self.writing = False
+                    self.txb += len(data)
+                    if hasattr(self, "parent_interface") and self.parent_interface != None:
+                        self.parent_interface.txb += len(data)
 
-                self.socket.sendall(data)
-                self.writing = False
-                self.txb += len(data)
-                if hasattr(self, "parent_interface") and self.parent_interface != None:
-                    self.parent_interface.txb += len(data)
-
-            except Exception as e:
-                RNS.log("Exception occurred while transmitting via "+str(self)+", tearing down interface", RNS.LOG_ERROR)
-                RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
-                self.teardown()
+                except Exception as e:
+                    RNS.log("Exception occurred while transmitting via "+str(self)+", tearing down interface", RNS.LOG_ERROR)
+                    RNS.log("The contained exception was: "+str(e), RNS.LOG_ERROR)
+                    self.teardown()
 
 
     def read_loop(self):
