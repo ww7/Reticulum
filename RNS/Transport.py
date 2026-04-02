@@ -820,6 +820,23 @@ class Transport:
 
                     Transport.tables_last_culled = time.time()
 
+                    # Cull stale announce rate entries (no activity for 1 hour)
+                    stale_rate_entries = []
+                    for destination_hash in Transport.announce_rate_table:
+                        rate_entry = Transport.announce_rate_table[destination_hash]
+                        if now - rate_entry["last"] > 3600:
+                            stale_rate_entries.append(destination_hash)
+                    for destination_hash in stale_rate_entries:
+                        Transport.announce_rate_table.pop(destination_hash)
+
+                    # Cull stale path request timestamps (older than 1 hour)
+                    stale_path_requests = []
+                    for destination_hash in Transport.path_requests:
+                        if now - Transport.path_requests[destination_hash] > 3600:
+                            stale_path_requests.append(destination_hash)
+                    for destination_hash in stale_path_requests:
+                        Transport.path_requests.pop(destination_hash)
+
                 # Run interface-related jobs
                 if time.time() > Transport.interface_last_jobs + Transport.interface_jobs_interval:
                     Transport.prioritize_interfaces()
