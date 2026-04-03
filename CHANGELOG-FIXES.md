@@ -2,6 +2,17 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`101de36`](../../commit/101de36) **[HIGH]** spawned_interfaces O(n²)→O(1), receipts/timestamps→deque, path_table LRU cap.
+Three data structure fixes:
+
+1. `spawned_interfaces` list → dict keyed by `id(interface)`. The `while x in list: list.remove(x)` pattern on client disconnect was O(n²). With 100+ clients, each disconnect scanned and shifted the entire list. Now O(1) via `dict.pop()`.
+
+2. `Transport.receipts` list → `collections.deque`. `pop(0)` on a list is O(n). `rate_entry["timestamps"]` → `deque(maxlen=16)` with auto-eviction (eliminates the `while len > max: pop(0)` loop entirely).
+
+3. `Transport.path_table` capped at 16,384 entries with LRU eviction. Path table was unbounded — growing ~270 entries/hour on a transport node, reaching 45K+ entries in a week. When over capacity, oldest entries (by timestamp) are sorted and evicted in `jobs()`. Existing 7-day TTL cleanup remains unchanged.
+
+---
+
 #### [`36e8ba6`](../../commit/36e8ba6) **[CRITICAL]** Replace O(n²) bytes operations with bytearray across entire packet pipeline.
 Production py-spy profiling showed `process_outgoing` consuming 88% CPU on a node with 100+ clients. Root cause: every buffer operation uses immutable `bytes` — each `+=`, `replace()`, and slice creates a full copy. IFAC unmask in `Transport.inbound()` was worst: per-byte `bytes([b ^ mask[i]])` concatenation in a loop — O(n²) on every inbound packet.
 
