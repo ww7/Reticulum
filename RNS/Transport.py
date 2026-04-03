@@ -145,7 +145,7 @@ class Transport:
     jobs_locked                 = False
     jobs_running                = False
     _jobs_event                 = threading.Event()  # Set when jobs are NOT running
-    hashlist_maxsize            = 1000000
+    hashlist_maxsize            = 128000       # Reduced from 1M: saves ~168MB, swap every ~18min vs 2.4h
     job_interval                = 0.250
     links_last_checked          = 0.0
     links_check_interval        = 1.0
