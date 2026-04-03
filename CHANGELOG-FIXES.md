@@ -2,6 +2,11 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`ad6f2b9`](../../commit/ad6f2b9) **[MEDIUM]** Replace busy-wait booleans with threading.Lock in save_packet_hashlist and save_path_table.
+Same pattern as `save_known_destinations` (c9d0d41): boolean flag with `sleep(0.2)` polling loop replaced with `threading.Lock(timeout=5)`. Both functions also now write to `.tmp` then `os.replace()` for atomic file updates — prevents data corruption on crash mid-write. Lock released in `finally` block.
+
+---
+
 #### [`cd681fd`](../../commit/cd681fd) **[HIGH]** Reduce packet_hashlist maxsize from 1M to 128K — saves ~168MB RAM.
 `hashlist_maxsize` was 1,000,000 — two sets of 500K entries each consumed ~193MB. Packet dedup only needs seconds of history (duplicate packets arrive immediately, not hours later). Reduced to 128K (64K per set, ~25MB total). Swap frequency increases from every ~2.4 hours to every ~18 minutes on a busy node — acceptable tradeoff for 168MB savings. Makes Reticulum viable on 512MB devices again.
 
