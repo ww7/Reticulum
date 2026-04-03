@@ -2,6 +2,11 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`cd681fd`](../../commit/cd681fd) **[HIGH]** Reduce packet_hashlist maxsize from 1M to 128K — saves ~168MB RAM.
+`hashlist_maxsize` was 1,000,000 — two sets of 500K entries each consumed ~193MB. Packet dedup only needs seconds of history (duplicate packets arrive immediately, not hours later). Reduced to 128K (64K per set, ~25MB total). Swap frequency increases from every ~2.4 hours to every ~18 minutes on a busy node — acceptable tradeoff for 168MB savings. Makes Reticulum viable on 512MB devices again.
+
+---
+
 #### [`101de36`](../../commit/101de36) **[HIGH]** spawned_interfaces O(n²)→O(1), receipts/timestamps→deque, path_table LRU cap.
 Three data structure fixes:
 
