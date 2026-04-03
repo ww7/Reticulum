@@ -16,6 +16,10 @@ import RNS
 METRICS = {}
 LOCK = threading.Lock()
 
+# Cumulative connection counters per interface (survives across collection cycles)
+_prev_clients = {}       # {interface_name: last_seen_client_count}
+_total_connections = {}   # {interface_name: cumulative_connections}
+
 
 def collect_metrics(reticulum):
     """Collect metrics from running Reticulum shared instance."""
@@ -64,6 +68,16 @@ def collect_metrics(reticulum):
         if_metrics = []
         for iface in stats.get("interfaces", []):
             name = iface.get("short_name", "unknown")
+            current_clients = iface.get("clients") if iface.get("clients") is not None else 0
+
+            # Track cumulative connections: when client count increases, add the delta
+            prev = _prev_clients.get(name, 0)
+            if name not in _total_connections:
+                _total_connections[name] = 0
+            if current_clients > prev:
+                _total_connections[name] += (current_clients - prev)
+            _prev_clients[name] = current_clients
+
             if_metrics.append({
                 "name": name,
                 "type": iface.get("type", "unknown"),
@@ -72,7 +86,8 @@ def collect_metrics(reticulum):
                 "tx_bytes": iface.get("txb", 0),
                 "rx_bps": iface.get("rxs", 0),
                 "tx_bps": iface.get("txs", 0),
-                "clients": iface.get("clients") if iface.get("clients") is not None else 0,
+                "clients": current_clients,
+                "clients_total": _total_connections[name],
                 "announce_queue": iface.get("announce_queue") or 0,
                 "held_announces": iface.get("held_announces", 0),
                 "mode": iface.get("mode", 0),
@@ -127,6 +142,7 @@ def format_prometheus():
             ("rns_interface_rx_bps", "gauge", "Interface receive rate bps", "rx_bps"),
             ("rns_interface_tx_bps", "gauge", "Interface transmit rate bps", "tx_bps"),
             ("rns_interface_clients", "gauge", "Interface connected clients", "clients"),
+            ("rns_interface_clients_total", "counter", "Interface cumulative client connections", "clients_total"),
             ("rns_interface_announce_queue", "gauge", "Interface announce queue length", "announce_queue"),
             ("rns_interface_held_announces", "gauge", "Interface held announces", "held_announces"),
             ("rns_interface_incoming_announce_freq", "gauge", "Interface incoming announce frequency (Hz)", "incoming_announce_freq"),
