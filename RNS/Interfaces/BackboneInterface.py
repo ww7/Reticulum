@@ -132,7 +132,7 @@ class BackboneInterface(Interface):
         self.name = name
         self.detached = False
         self.mode = RNS.Interfaces.Interface.Interface.MODE_FULL
-        self.spawned_interfaces = []
+        self.spawned_interfaces = {}  # dict keyed by id(interface) for O(1) add/remove/membership
         self.supports_discovery = True
 
         if bindport == None:
@@ -271,7 +271,7 @@ class BackboneInterface(Interface):
                                             if spawned_interface.parent_interface:
                                                 pif = spawned_interface.parent_interface
                                                 if pif.spawned_interfaces != None:
-                                                    while spawned_interface in pif.spawned_interfaces: pif.spawned_interfaces.remove(spawned_interface)
+                                                    pif.spawned_interfaces.pop(id(spawned_interface), None)
                                         except Exception as e: RNS.log(f"Error while removing spawned interface from {pif}: {e}", RNS.LOG_ERROR)
 
                                         spawned_interface.receive(received_bytes)
@@ -292,7 +292,7 @@ class BackboneInterface(Interface):
                                             if spawned_interface.parent_interface:
                                                 pif = spawned_interface.parent_interface
                                                 if pif.spawned_interfaces != None:
-                                                    while spawned_interface in pif.spawned_interfaces: pif.spawned_interfaces.remove(spawned_interface)
+                                                    pif.spawned_interfaces.pop(id(spawned_interface), None)
                                         except Exception as e: RNS.log(f"Error while removing spawned interface from {pif}: {e}", RNS.LOG_ERROR)
 
                                         try: client_socket.close()
@@ -314,7 +314,7 @@ class BackboneInterface(Interface):
                                         if spawned_interface.parent_interface:
                                             pif = spawned_interface.parent_interface
                                             if pif.spawned_interfaces != None:
-                                                while spawned_interface in pif.spawned_interfaces: pif.spawned_interfaces.remove(spawned_interface)
+                                                pif.spawned_interfaces.pop(id(spawned_interface), None)
                                     except Exception as e: RNS.log(f"Error while removing spawned interface from {pif}: {e}", RNS.LOG_ERROR)
 
                                     try: client_socket.close()
@@ -397,8 +397,7 @@ class BackboneInterface(Interface):
             spawned_interface.online = True
             RNS.log("Spawned new BackboneClient Interface: "+str(spawned_interface), RNS.LOG_VERBOSE)
             RNS.Transport.interfaces.append(spawned_interface)
-            while spawned_interface in self.spawned_interfaces: self.spawned_interfaces.remove(spawned_interface)
-            self.spawned_interfaces.append(spawned_interface)
+            self.spawned_interfaces[id(spawned_interface)] = spawned_interface
             BackboneInterface.add_client_socket(socket, spawned_interface)
 
         except Exception as e:
@@ -717,8 +716,7 @@ class BackboneClientInterface(Interface):
         self.IN = False
 
         if hasattr(self, "parent_interface") and self.parent_interface != None:
-            while self in self.parent_interface.spawned_interfaces:
-                self.parent_interface.spawned_interfaces.remove(self)
+            self.parent_interface.spawned_interfaces.pop(id(self), None)
 
         if self in RNS.Transport.interfaces:
             if not self.initiator:

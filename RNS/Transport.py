@@ -90,6 +90,7 @@ class Transport:
     DESTINATION_TIMEOUT         = 60*60*24*7   # Destination table entries are removed if unused for one week
     MAX_RECEIPTS                = 1024         # Maximum number of receipts to keep track of
     MAX_RATE_TIMESTAMPS         = 16           # Maximum number of announce timestamps to keep per destination
+    MAX_PATH_TABLE              = 16384        # Maximum path table entries before LRU eviction (~1.6MB, prevents unbounded growth)
     PERSIST_RANDOM_BLOBS        = 32           # Maximum number of random blobs per destination to persist to disk
     MAX_RANDOM_BLOBS            = 64           # Maximum number of random blobs per destination to keep in memory
 
@@ -99,7 +100,7 @@ class Transport:
     active_links                = []           # Links that are active
     packet_hashlist             = set()        # A list of packet hashes for duplicate detection
     packet_hashlist_prev        = set()
-    receipts                    = []           # Receipts of all outgoing packets for proof processing
+    receipts                    = collections.deque()  # Receipts of all outgoing packets for proof processing
 
     # Notes on memory usage: 1 megabyte of memory can store approximately
     # 55.100 path table entries or approximately 22.300 link table entries.
@@ -515,7 +516,7 @@ class Transport:
                 # Process receipts list for timed-out packets
                 if time.time() > Transport.receipts_last_checked+Transport.receipts_check_interval:
                     while len(Transport.receipts) > Transport.MAX_RECEIPTS:
-                        culled_receipt = Transport.receipts.pop(0)
+                        culled_receipt = Transport.receipts.popleft()
                         culled_receipt.timeout = -1
                         culled_receipt.check_timeout()
                         should_collect = True
@@ -807,6 +808,18 @@ class Transport:
                     if i > 0:
                         if i == 1: RNS.log("Removed "+str(i)+" path", RNS.LOG_EXTREME)
                         else: RNS.log("Removed "+str(i)+" paths", RNS.LOG_EXTREME)
+
+                    # Evict oldest path table entries if over capacity (LRU by timestamp)
+                    if len(Transport.path_table) > Transport.MAX_PATH_TABLE:
+                        overflow = len(Transport.path_table) - Transport.MAX_PATH_TABLE
+                        sorted_paths = sorted(Transport.path_table.items(), key=lambda e: e[1][IDX_PT_TIMESTAMP])
+                        evicted = 0
+                        for destination_hash, entry in sorted_paths[:overflow]:
+                            Transport.path_table.pop(destination_hash, None)
+                            evicted += 1
+                        if evicted > 0:
+                            RNS.log(f"Path table over capacity, evicted {evicted} oldest entries ({len(Transport.path_table)} remaining)", RNS.LOG_DEBUG)
+                            should_collect = True
 
                     i = 0
                     for destination_hash in stale_discovery_path_requests:
@@ -1712,15 +1725,12 @@ class Transport:
                                 rate_blocked = False
                                 if packet.context != RNS.Packet.PATH_RESPONSE and packet.receiving_interface.announce_rate_target != None:
                                     if not packet.destination_hash in Transport.announce_rate_table:
-                                        rate_entry = { "last": now, "rate_violations": 0, "blocked_until": 0, "timestamps": [now]}
+                                        rate_entry = { "last": now, "rate_violations": 0, "blocked_until": 0, "timestamps": collections.deque([now], maxlen=Transport.MAX_RATE_TIMESTAMPS)}
                                         Transport.announce_rate_table[packet.destination_hash] = rate_entry
 
                                     else:
                                         rate_entry = Transport.announce_rate_table[packet.destination_hash]
-                                        rate_entry["timestamps"].append(now)
-
-                                        while len(rate_entry["timestamps"]) > Transport.MAX_RATE_TIMESTAMPS:
-                                            rate_entry["timestamps"].pop(0)
+                                        rate_entry["timestamps"].append(now)  # deque(maxlen=) auto-evicts oldest
 
                                         current_rate = now - rate_entry["last"]
 

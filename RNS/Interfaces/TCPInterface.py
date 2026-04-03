@@ -444,8 +444,7 @@ class TCPClientInterface(Interface):
         self.IN = False
 
         if hasattr(self, "parent_interface") and self.parent_interface != None:
-            while self in self.parent_interface.spawned_interfaces:
-                self.parent_interface.spawned_interfaces.remove(self)
+            self.parent_interface.spawned_interfaces.pop(id(self), None)
 
         if self in RNS.Transport.interfaces:
             if not self.initiator:
@@ -527,7 +526,7 @@ class TCPServerInterface(Interface):
         self.HW_MTU = TCPInterface.HW_MTU
 
         self.online = False
-        self.spawned_interfaces = []
+        self.spawned_interfaces = {}  # dict keyed by id(interface) for O(1) add/remove/membership
         
         self.IN  = True
         self.OUT = False
@@ -624,9 +623,7 @@ class TCPServerInterface(Interface):
         spawned_interface.online = True
         RNS.log("Spawned new TCPClient Interface: "+str(spawned_interface), RNS.LOG_VERBOSE)
         RNS.Transport.interfaces.append(spawned_interface)
-        while spawned_interface in self.spawned_interfaces:
-            self.spawned_interfaces.remove(spawned_interface)
-        self.spawned_interfaces.append(spawned_interface)
+        self.spawned_interfaces[id(spawned_interface)] = spawned_interface
         spawned_interface.read_loop()
 
     def received_announce(self, from_spawned=False):
