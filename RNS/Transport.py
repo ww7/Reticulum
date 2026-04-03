@@ -2983,30 +2983,27 @@ class Transport:
 
         return announce_emitted
 
+    _saving_hashlist_lock = threading.Lock()
+
     @staticmethod
     def save_packet_hashlist():
         if not Transport.owner.is_connected_to_shared_instance:
-            if hasattr(Transport, "saving_packet_hashlist"):
-                wait_interval = 0.2
-                wait_timeout = 5
-                wait_start = time.time()
-                while Transport.saving_packet_hashlist:
-                    time.sleep(wait_interval)
-                    if time.time() > wait_start+wait_timeout:
-                        RNS.log("Could not save packet hashlist to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
-                        return False
+            if not Transport._saving_hashlist_lock.acquire(timeout=5):
+                RNS.log("Could not save packet hashlist to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
+                return False
 
             try:
-                Transport.saving_packet_hashlist = True
                 save_start = time.time()
 
                 if not RNS.Reticulum.transport_enabled(): Transport.packet_hashlist = set()
                 else: RNS.log("Saving packet hashlist to storage...", RNS.LOG_DEBUG)
 
                 packet_hashlist_path = RNS.Reticulum.storagepath+"/packet_hashlist"
-                file = open(packet_hashlist_path, "wb")
+                tmp_path = packet_hashlist_path + ".tmp"
+                file = open(tmp_path, "wb")
                 file.write(umsgpack.packb(list(Transport.packet_hashlist.copy())))
                 file.close()
+                os.replace(tmp_path, packet_hashlist_path)
 
                 save_time = time.time() - save_start
                 if save_time < 1: time_str = str(round(save_time*1000,2))+"ms"
@@ -3016,25 +3013,21 @@ class Transport:
             except Exception as e:
                 RNS.log("Could not save packet hashlist to storage, the contained exception was: "+str(e), RNS.LOG_ERROR)
 
-            Transport.saving_packet_hashlist = False
+            finally:
+                Transport._saving_hashlist_lock.release()
             gc.collect()
 
+
+    _saving_path_table_lock = threading.Lock()
 
     @staticmethod
     def save_path_table():
         if not Transport.owner.is_connected_to_shared_instance:
-            if hasattr(Transport, "saving_path_table"):
-                wait_interval = 0.2
-                wait_timeout = 5
-                wait_start = time.time()
-                while Transport.saving_path_table:
-                    time.sleep(wait_interval)
-                    if time.time() > wait_start+wait_timeout:
-                        RNS.log("Could not save path table to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
-                        return False
+            if not Transport._saving_path_table_lock.acquire(timeout=5):
+                RNS.log("Could not save path table to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
+                return False
 
             try:
-                Transport.saving_path_table = True
                 save_start = time.time()
                 RNS.log("Saving path table to storage...", RNS.LOG_DEBUG)
 
@@ -3077,9 +3070,11 @@ class Transport:
                     except Exception as e: RNS.log(f"Skipping persist for path table entry due to error: {e}", RNS.LOG_ERROR)
 
                 path_table_path = RNS.Reticulum.storagepath+"/destination_table"
-                file = open(path_table_path, "wb")
+                tmp_path = path_table_path + ".tmp"
+                file = open(tmp_path, "wb")
                 file.write(umsgpack.packb(serialised_destinations))
                 file.close()
+                os.replace(tmp_path, path_table_path)
 
                 save_time = time.time() - save_start
                 if save_time < 1: time_str = str(round(save_time*1000,2))+"ms"
@@ -3090,7 +3085,8 @@ class Transport:
                 RNS.log("Could not save path table to storage, the contained exception was: "+str(e), RNS.LOG_ERROR)
                 RNS.trace_exception(e)
 
-            Transport.saving_path_table = False
+            finally:
+                Transport._saving_path_table_lock.release()
             gc.collect()
 
 
