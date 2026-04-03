@@ -2,6 +2,25 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`36e8ba6`](../../commit/36e8ba6) **[CRITICAL]** Replace O(n²) bytes operations with bytearray across entire packet pipeline.
+Production py-spy profiling showed `process_outgoing` consuming 88% CPU on a node with 100+ clients. Root cause: every buffer operation uses immutable `bytes` — each `+=`, `replace()`, and slice creates a full copy. IFAC unmask in `Transport.inbound()` was worst: per-byte `bytes([b ^ mask[i]])` concatenation in a loop — O(n²) on every inbound packet.
+
+**Fix:**
+- `Transport.py`: IFAC unmask → `bytearray` with in-place index XOR assignment (O(n) instead of O(n²))
+- `BackboneInterface.py`: `transmit_buffer` and `frame_buffer` → `bytearray`; `.extend()` for append, `del buf[:n]` for consume instead of slice copy
+- `BackboneInterface.py`, `TCPInterface.py`, `LocalInterface.py`: HDLC constants pre-computed as module-level bytes (`_FLAG_BYTE`, `_ESC_BYTE`, `_ESC_ESC`, `_ESC_FLAG`); `escape()` and unescape use pre-computed constants instead of `bytes([x])` per call
+
+Before: ~508 memory allocations per packet transiting 100 clients. After: in-place operations, zero intermediate copies for buffer ops.
+
+---
+
+#### [`1d74b3b`](../../commit/1d74b3b) **[MONITORING]** Add cumulative client connection counter to exporter.
+`rns_interface_clients` is a gauge (current connections only). No way to see historical connection trends — Grafana panel showed a single number with no history.
+
+**Fix:** Added `rns_interface_clients_total` counter that tracks cumulative connections by detecting client count increases between collection cycles. Added "Connected Clients (history)" timeseries panel to Grafana dashboard.
+
+---
+
 #### [`c9d0d41`](../../commit/c9d0d41) **[HIGH]** Replace busy-wait boolean with Lock and atomic write in save_known_destinations.
 `Identity.save_known_destinations()` used a boolean flag with busy-wait polling (`sleep(0.2)` loop) instead of a proper lock. Also wrote directly to the destination file — a crash mid-write corrupts it.
 
