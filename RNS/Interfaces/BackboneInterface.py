@@ -42,10 +42,16 @@ class HDLC():
     ESC               = 0x7D
     ESC_MASK          = 0x20
 
+    # Pre-computed constants to avoid per-call bytes([x]) allocations
+    _FLAG_BYTE        = bytes([0x7E])
+    _ESC_BYTE         = bytes([0x7D])
+    _ESC_ESC          = bytes([0x7D, 0x7D ^ 0x20])
+    _ESC_FLAG         = bytes([0x7D, 0x7E ^ 0x20])
+
     @staticmethod
     def escape(data):
-        data = data.replace(bytes([HDLC.ESC]), bytes([HDLC.ESC, HDLC.ESC^HDLC.ESC_MASK]))
-        data = data.replace(bytes([HDLC.FLAG]), bytes([HDLC.ESC, HDLC.FLAG^HDLC.ESC_MASK]))
+        data = data.replace(HDLC._ESC_BYTE, HDLC._ESC_ESC)
+        data = data.replace(HDLC._FLAG_BYTE, HDLC._ESC_FLAG)
         return data
 
 class BackboneInterface(Interface):
@@ -293,7 +299,7 @@ class BackboneInterface(Interface):
                                         except Exception as e: RNS.log(f"Error while closing socket for {spawned_interface}: {e}", RNS.LOG_ERROR)
                                         spawned_interface.receive(b"")
 
-                                    spawned_interface.transmit_buffer = spawned_interface.transmit_buffer[written:]
+                                    del spawned_interface.transmit_buffer[:written]
                                     if len(spawned_interface.transmit_buffer) == 0: BackboneInterface.epoll.modify(fileno, select.EPOLLIN)
                                     spawned_interface.txb += written
                                     if spawned_interface.parent_interface: spawned_interface.parent_interface.txb += written
@@ -482,8 +488,8 @@ class BackboneClientInterface(Interface):
         self.i2p_tunneled     = i2p_tunneled
         self.mode             = RNS.Interfaces.Interface.Interface.MODE_FULL
         self.bitrate          = BackboneClientInterface.BITRATE_GUESS
-        self.frame_buffer     = b""
-        self.transmit_buffer  = b""
+        self.frame_buffer     = bytearray()
+        self.transmit_buffer  = bytearray()
         
         if max_reconnect_tries == None:
             self.max_reconnect_tries = BackboneClientInterface.RECONNECT_MAX_TRIES
@@ -638,10 +644,13 @@ class BackboneClientInterface(Interface):
     def process_outgoing(self, data):
         if self.online and not self.detached:
             try:
-                self.transmit_buffer += bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                escaped = HDLC.escape(data)
+                self.transmit_buffer.extend(HDLC._FLAG_BYTE)
+                self.transmit_buffer.extend(escaped)
+                self.transmit_buffer.extend(HDLC._FLAG_BYTE)
                 if len(self.transmit_buffer) > BackboneClientInterface.MAX_TRANSMIT_BUFFER:
                     RNS.log(f"Transmit buffer overflow on {self}, dropping oldest data ({len(self.transmit_buffer)} bytes)", RNS.LOG_WARNING)
-                    self.transmit_buffer = self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:]
+                    self.transmit_buffer = bytearray(self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:])
                 BackboneInterface.tx_ready(self)
 
             except Exception as e:
@@ -652,22 +661,22 @@ class BackboneClientInterface(Interface):
     def receive(self, data_in):
         try:
             if len(data_in) > 0:
-                self.frame_buffer += data_in
+                self.frame_buffer.extend(data_in)
                 if len(self.frame_buffer) > BackboneClientInterface.MAX_FRAME_BUFFER:
                     RNS.log(f"Frame buffer overflow on {self}, discarding buffer ({len(self.frame_buffer)} bytes)", RNS.LOG_WARNING)
-                    self.frame_buffer = b""
+                    self.frame_buffer = bytearray()
                 flags_remaining = True
                 while flags_remaining:
                     frame_start = self.frame_buffer.find(HDLC.FLAG)
                     if frame_start != -1:
                         frame_end = self.frame_buffer.find(HDLC.FLAG, frame_start+1)
                         if frame_end != -1:
-                            frame = self.frame_buffer[frame_start+1:frame_end]
-                            frame = frame.replace(bytes([HDLC.ESC, HDLC.FLAG ^ HDLC.ESC_MASK]), bytes([HDLC.FLAG]))
-                            frame = frame.replace(bytes([HDLC.ESC, HDLC.ESC  ^ HDLC.ESC_MASK]), bytes([HDLC.ESC]))
+                            frame = bytes(self.frame_buffer[frame_start+1:frame_end])
+                            frame = frame.replace(HDLC._ESC_FLAG, HDLC._FLAG_BYTE)
+                            frame = frame.replace(HDLC._ESC_ESC, HDLC._ESC_BYTE)
                             if len(frame) > RNS.Reticulum.HEADER_MINSIZE:
                                 self.process_incoming(frame)
-                            self.frame_buffer = self.frame_buffer[frame_end:]
+                            del self.frame_buffer[:frame_end]
                         else:
                             flags_remaining = False
                     else:

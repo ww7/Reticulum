@@ -44,10 +44,16 @@ class HDLC():
     ESC               = 0x7D
     ESC_MASK          = 0x20
 
+    # Pre-computed constants to avoid per-call bytes([x]) allocations
+    _FLAG_BYTE        = bytes([0x7E])
+    _ESC_BYTE         = bytes([0x7D])
+    _ESC_ESC          = bytes([0x7D, 0x7D ^ 0x20])
+    _ESC_FLAG         = bytes([0x7D, 0x7E ^ 0x20])
+
     @staticmethod
     def escape(data):
-        data = data.replace(bytes([HDLC.ESC]), bytes([HDLC.ESC, HDLC.ESC^HDLC.ESC_MASK]))
-        data = data.replace(bytes([HDLC.FLAG]), bytes([HDLC.ESC, HDLC.FLAG^HDLC.ESC_MASK]))
+        data = data.replace(HDLC._ESC_BYTE, HDLC._ESC_ESC)
+        data = data.replace(HDLC._FLAG_BYTE, HDLC._ESC_FLAG)
         return data
 
 class ThreadingTCPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
@@ -82,8 +88,8 @@ class LocalClientInterface(Interface):
         self.detached         = False
         self.name             = name
         self.mode             = RNS.Interfaces.Interface.Interface.MODE_FULL
-        self.frame_buffer     = b""
-        self.transmit_buffer  = b""
+        self.frame_buffer     = bytearray()
+        self.transmit_buffer  = bytearray()
 
         if RNS.vendor.platformutils.use_epoll():
             self.epoll_backend = True
@@ -199,7 +205,10 @@ class LocalClientInterface(Interface):
         if self.online:
             try:
                 if self.epoll_backend:
-                    self.transmit_buffer += bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                    escaped = HDLC.escape(data)
+                    self.transmit_buffer.extend(HDLC._FLAG_BYTE)
+                    self.transmit_buffer.extend(escaped)
+                    self.transmit_buffer.extend(HDLC._FLAG_BYTE)
                     BackboneInterface.tx_ready(self)
 
                 else:
@@ -214,7 +223,7 @@ class LocalClientInterface(Interface):
                             s = len(data) / self.bitrate * 8
                             time.sleep(s)
 
-                    data = bytes([HDLC.FLAG])+HDLC.escape(data)+bytes([HDLC.FLAG])
+                    data = HDLC._FLAG_BYTE + HDLC.escape(data) + HDLC._FLAG_BYTE
                     self.socket.sendall(data)
                     self.writing = False
                     self.txb += len(data)
@@ -236,8 +245,8 @@ class LocalClientInterface(Interface):
                 frame_end = self.frame_buffer.find(HDLC.FLAG, frame_start+1)
                 if frame_end != -1:
                     frame = self.frame_buffer[frame_start+1:frame_end]
-                    frame = frame.replace(bytes([HDLC.ESC, HDLC.FLAG ^ HDLC.ESC_MASK]), bytes([HDLC.FLAG]))
-                    frame = frame.replace(bytes([HDLC.ESC, HDLC.ESC  ^ HDLC.ESC_MASK]), bytes([HDLC.ESC]))
+                    frame = frame.replace(HDLC._ESC_FLAG, HDLC._FLAG_BYTE)
+                    frame = frame.replace(HDLC._ESC_ESC, HDLC._ESC_BYTE)
                     if len(frame) > RNS.Reticulum.HEADER_MINSIZE:
                         self.process_incoming(frame)
                     self.frame_buffer = self.frame_buffer[frame_end:]
@@ -269,7 +278,7 @@ class LocalClientInterface(Interface):
 
     def read_loop(self):
         try:
-            self.frame_buffer = b""
+            self.frame_buffer = bytearray()
             data_in = b""
             while True:
                 data_in = self.socket.recv(4096)

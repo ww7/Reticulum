@@ -1292,23 +1292,15 @@ class Transport:
                             context=None,
                         )
 
-                        # Unmask payload
-                        i = 0; unmasked_raw = b""
-                        for byte in raw:
+                        # Unmask payload in-place using bytearray (O(n) instead of O(n²))
+                        unmasked_raw = bytearray(raw)
+                        for i in range(len(raw)):
                             if i <= 1 or i > interface.ifac_size+1:
-                                # Unmask header bytes and payload
-                                unmasked_raw += bytes([byte ^ mask[i]])
-                            else:
-                                # Don't unmask IFAC itself
-                                unmasked_raw += bytes([byte])
-                            i += 1
-                        raw = unmasked_raw
+                                unmasked_raw[i] = raw[i] ^ mask[i]
+                        raw = bytes(unmasked_raw)
 
-                        # Unset IFAC flag
-                        new_header = bytes([raw[0] & 0x7f, raw[1]])
-
-                        # Re-assemble packet
-                        new_raw = new_header+raw[2+interface.ifac_size:]
+                        # Unset IFAC flag and re-assemble packet
+                        new_raw = bytes([raw[0] & 0x7f, raw[1]]) + raw[2+interface.ifac_size:]
 
                         # Calculate expected IFAC
                         expected_ifac = interface.ifac_identity.sign(new_raw)[-interface.ifac_size:]
