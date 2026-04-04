@@ -213,3 +213,14 @@ When the listener socket receives EPOLLHUP, the code closes it and never recreat
 **Fix:** `listen(512)`.
 
 ---
+
+---
+
+#### [`49c8643`](../../commit/49c8643) **[CRITICAL]** Fix two regressions — missing `now` variable and bytes/bytearray crash in epoll send.
+Two bugs introduced in our own commits:
+
+1. `Transport.jobs()`: `now` variable not defined in rate_entry/path_requests eviction scope (from commit 93b7273). Caused `NameError: name 'now' is not defined` every 5 seconds, breaking ALL Transport jobs — announce retransmit, link management, path cleanup, everything.
+
+2. `BackboneInterface.__job()`: `del spawned_interface.transmit_buffer[:written]` crashes when buffer is `bytes` instead of `bytearray`. This killed the entire epoll I/O loop via `finally: _job_active = False`, making ALL spawned client interfaces deaf — no data sent to any connected client. Root cause of "Could not find path to destination" reported by users.
+
+**Fix:** (1) Added `now = time.time()` before eviction loop. (2) Added `isinstance` check with bytearray fast path and bytes→bytearray fallback.
