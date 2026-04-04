@@ -2,6 +2,17 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+#### [`8a69291`](../../commit/8a69291) **[HIGH]** IFAC mask O(n²)→bytearray, escape-once fan-out cache, tunnel_table Lock+atomic.
+Three fixes addressing production CPU spikes:
+
+1. `Transport.transmit()` IFAC mask: per-byte `bytes` concatenation → `bytearray` index assignment. Same O(n²) pattern as inbound unmask, called for every outgoing packet on every interface.
+
+2. `BackboneClientInterface.process_outgoing()`: escape-once fan-out cache. When Transport sends the same `packet.raw` to N connected clients, `HDLC.escape()` now runs once and the framed result is cached by `id(data)`. With 100 clients, this eliminates 99 redundant escape operations per packet — directly addresses the fan-out CPU bottleneck identified by py-spy.
+
+3. `save_tunnel_table()`: busy-wait boolean → `threading.Lock(timeout=5)` + atomic write via `os.replace()`. Completes the set — all three persist functions (`packet_hashlist`, `path_table`, `tunnel_table`) now use proper locking and atomic writes.
+
+---
+
 #### [`ad6f2b9`](../../commit/ad6f2b9) **[MEDIUM]** Replace busy-wait booleans with threading.Lock in save_packet_hashlist and save_path_table.
 Same pattern as `save_known_destinations` (c9d0d41): boolean flag with `sleep(0.2)` polling loop replaced with `threading.Lock(timeout=5)`. Both functions also now write to `.tmp` then `os.replace()` for atomic file updates — prevents data corruption on crash mid-write. Lock released in `finally` block.
 
