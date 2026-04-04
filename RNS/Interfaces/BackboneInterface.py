@@ -299,10 +299,7 @@ class BackboneInterface(Interface):
                                         except Exception as e: RNS.log(f"Error while closing socket for {spawned_interface}: {e}", RNS.LOG_ERROR)
                                         spawned_interface.receive(b"")
 
-                                    if isinstance(spawned_interface.transmit_buffer, bytearray):
-                                        del spawned_interface.transmit_buffer[:written]
-                                    else:
-                                        spawned_interface.transmit_buffer = bytearray(spawned_interface.transmit_buffer[written:])
+                                    spawned_interface.transmit_buffer = spawned_interface.transmit_buffer[written:]
                                     if len(spawned_interface.transmit_buffer) == 0: BackboneInterface.epoll.modify(fileno, select.EPOLLIN)
                                     spawned_interface.txb += written
                                     if spawned_interface.parent_interface: spawned_interface.parent_interface.txb += written
@@ -496,7 +493,7 @@ class BackboneClientInterface(Interface):
         self.mode             = RNS.Interfaces.Interface.Interface.MODE_FULL
         self.bitrate          = BackboneClientInterface.BITRATE_GUESS
         self.frame_buffer     = bytearray()
-        self.transmit_buffer  = bytearray()
+        self.transmit_buffer  = b""
         
         if max_reconnect_tries == None:
             self.max_reconnect_tries = BackboneClientInterface.RECONNECT_MAX_TRIES
@@ -662,10 +659,10 @@ class BackboneClientInterface(Interface):
                     framed = HDLC._FLAG_BYTE + escaped + HDLC._FLAG_BYTE
                     BackboneClientInterface._escape_cache_id = data_id
                     BackboneClientInterface._escape_cache_frame = framed
-                self.transmit_buffer.extend(framed)
+                self.transmit_buffer += framed
                 if len(self.transmit_buffer) > BackboneClientInterface.MAX_TRANSMIT_BUFFER:
                     RNS.log(f"Transmit buffer overflow on {self}, dropping oldest data ({len(self.transmit_buffer)} bytes)", RNS.LOG_WARNING)
-                    self.transmit_buffer = bytearray(self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:])
+                    self.transmit_buffer = self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:]
                 BackboneInterface.tx_ready(self)
 
             except Exception as e:
