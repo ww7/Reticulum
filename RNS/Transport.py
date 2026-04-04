@@ -87,7 +87,7 @@ class Transport:
 
     LINK_TIMEOUT                = RNS.Link.STALE_TIME * 1.25
     REVERSE_TIMEOUT             = 8*60         # Reverse table entries are removed after 8 minutes
-    DESTINATION_TIMEOUT         = 60*60*24*7   # Destination table entries are removed if unused for one week
+    DESTINATION_TIMEOUT         = 60*60*48     # Destination table entries are removed if unused for 48 hours (was 7 days)
     MAX_RECEIPTS                = 1024         # Maximum number of receipts to keep track of
     MAX_RATE_TIMESTAMPS         = 16           # Maximum number of announce timestamps to keep per destination
     MAX_PATH_TABLE              = 16384        # Maximum path table entries before LRU eviction (~1.6MB, prevents unbounded growth)
@@ -737,6 +737,10 @@ class Transport:
                             stale_paths.append(destination_hash)
                             should_collect = True
                             RNS.log("Path to "+RNS.prettyhexrep(destination_hash)+" was removed since the attached interface no longer exists", RNS.LOG_DEBUG)
+                        elif destination_entry[IDX_PT_HOPS] > Transport.PATHFINDER_M // 2:
+                            stale_paths.append(destination_hash)
+                            should_collect = True
+                            RNS.log("Path to "+RNS.prettyhexrep(destination_hash)+" with "+str(destination_entry[IDX_PT_HOPS])+" hops exceeds sanity limit and was removed", RNS.LOG_DEBUG)
 
                     # Cull the pending discovery path requests table
                     stale_discovery_path_requests = []
