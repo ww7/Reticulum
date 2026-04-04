@@ -3,10 +3,21 @@ All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
 
-#### [\`$(git rev-parse --short HEAD)\`](../../commit/$(git rev-parse --short HEAD)) **[HIGH]** Aggressive stale path cleanup — 48h TTL and hop sanity limit.
+#### [`85f4c8f`](../../commit/85f4c8f) **[HIGH]** Aggressive stale path cleanup — 48h TTL and hop sanity limit.
 Stale paths with dead next-hop nodes cause "Could not establish link" — link request packets are sent into dead routes and timeout. Two changes: (1) `DESTINATION_TIMEOUT` reduced from 7 days to 48 hours — paths not refreshed by a new announce are pruned faster. (2) Hop count sanity check during `jobs()` cleanup — paths with more than 64 hops (half of `PATHFINDER_M=128`) are removed. In production, 115-hop and 24-hop routes were observed polluting the path table. Confirmed fix: clearing stale `destination_table` immediately resolved page loading failures.
 
 ---
+
+#### [`aed567e`](../../commit/aed567e) **[CRITICAL]** Revert transmit_buffer to bytes — bytearray conflicts with epoll non-blocking send.
+`bytearray` transmit_buffer caused two crashes: (1) `send()` holds a buffer reference, concurrent `.extend()` raises "Existing exports of data: object cannot be re-sized". (2) `del buf[:written]` fails when buffer is somehow still `bytes`. Both killed the epoll I/O loop via `finally: _job_active = False`, making all spawned client interfaces deaf. Reverted to immutable `bytes` (safe for concurrent send + append). `frame_buffer` stays `bytearray` (receive path has no concurrent access). Escape-once fan-out cache retained — main CPU win preserved.
+
+---
+
+#### [`49c8643`](../../commit/49c8643) **[CRITICAL]** Fix two regressions — missing `now` variable and bytes/bytearray crash in epoll send.
+Two bugs from our own commits: (1) `now` variable not defined in rate_entry eviction scope (from commit 93b7273) — `NameError` every 5 seconds breaking ALL Transport jobs. (2) `del bytearray[:n]` on `transmit_buffer` type mismatch. Root cause of "Could not find path to destination" — server accepted clients but sent them zero data.
+
+---
+
 #### [`8a69291`](../../commit/8a69291) **[HIGH]** IFAC mask O(n²)→bytearray, escape-once fan-out cache, tunnel_table Lock+atomic.
 Three fixes addressing production CPU spikes:
 
@@ -217,15 +228,4 @@ When the listener socket receives EPOLLHUP, the code closes it and never recreat
 
 **Fix:** `listen(512)`.
 
----
 
----
-
-#### [`49c8643`](../../commit/49c8643) **[CRITICAL]** Fix two regressions — missing `now` variable and bytes/bytearray crash in epoll send.
-Two bugs introduced in our own commits:
-
-1. `Transport.jobs()`: `now` variable not defined in rate_entry/path_requests eviction scope (from commit 93b7273). Caused `NameError: name 'now' is not defined` every 5 seconds, breaking ALL Transport jobs — announce retransmit, link management, path cleanup, everything.
-
-2. `BackboneInterface.__job()`: `del spawned_interface.transmit_buffer[:written]` crashes when buffer is `bytes` instead of `bytearray`. This killed the entire epoll I/O loop via `finally: _job_active = False`, making ALL spawned client interfaces deaf — no data sent to any connected client. Root cause of "Could not find path to destination" reported by users.
-
-**Fix:** (1) Added `now = time.time()` before eviction loop. (2) Added `isinstance` check with bytearray fast path and bytes→bytearray fallback.
