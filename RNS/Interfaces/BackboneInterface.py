@@ -395,7 +395,7 @@ class BackboneInterface(Interface):
             spawned_interface.mode = self.mode
             spawned_interface.HW_MTU = self.HW_MTU
             spawned_interface.online = True
-            RNS.log("Spawned new BackboneClient Interface: "+str(spawned_interface), RNS.LOG_VERBOSE)
+            RNS.log("Spawned new BackboneClient Interface: "+str(spawned_interface)+f" OUT={spawned_interface.OUT} IN={spawned_interface.IN} mode={spawned_interface.mode}", RNS.LOG_VERBOSE)
             RNS.Transport.interfaces.append(spawned_interface)
             self.spawned_interfaces[id(spawned_interface)] = spawned_interface
             BackboneInterface.add_client_socket(socket, spawned_interface)
