@@ -4,66 +4,63 @@ Branch: `fixes/transport-stability`
 
 
 #### [`85f4c8f`](../../commit/85f4c8f) **[HIGH]** Aggressive stale path cleanup — 48h TTL and hop sanity limit.
-Stale paths with dead next-hop nodes cause "Could not establish link" — link request packets are sent into dead routes and timeout. Two changes: (1) `DESTINATION_TIMEOUT` reduced from 7 days to 48 hours — paths not refreshed by a new announce are pruned faster. (2) Hop count sanity check during `jobs()` cleanup — paths with more than 64 hops (half of `PATHFINDER_M=128`) are removed. In production, 115-hop and 24-hop routes were observed polluting the path table. Confirmed fix: clearing stale `destination_table` immediately resolved page loading failures.
+Stale paths with dead next-hop nodes cause "Could not establish link" — link request packets are sent into dead routes and timeout.
+
+**Fix:** (1) `DESTINATION_TIMEOUT` reduced from 7 days to 48 hours — paths not refreshed by a new announce are pruned faster. (2) Hop count sanity check during `jobs()` cleanup — paths with more than 64 hops (half of `PATHFINDER_M=128`) are removed. In production, 115-hop and 24-hop routes were observed polluting the path table.
 
 ---
 
 #### [`aed567e`](../../commit/aed567e) **[CRITICAL]** Revert transmit_buffer to bytes — bytearray conflicts with epoll non-blocking send.
-`bytearray` transmit_buffer caused two crashes: (1) `send()` holds a buffer reference, concurrent `.extend()` raises "Existing exports of data: object cannot be re-sized". (2) `del buf[:written]` fails when buffer is somehow still `bytes`. Both killed the epoll I/O loop via `finally: _job_active = False`, making all spawned client interfaces deaf. Reverted to immutable `bytes` (safe for concurrent send + append). `frame_buffer` stays `bytearray` (receive path has no concurrent access). Escape-once fan-out cache retained — main CPU win preserved.
+`bytearray` transmit_buffer caused two crashes: (1) `send()` holds a buffer reference, concurrent `.extend()` raises "Existing exports of data: object cannot be re-sized". (2) `del buf[:written]` fails when buffer is `bytes`. Both killed the epoll I/O loop via `finally: _job_active = False`, making all spawned client interfaces deaf.
+
+**Fix:** Reverted `transmit_buffer` to immutable `bytes` (safe for concurrent send + append). `frame_buffer` stays `bytearray` (receive path has no concurrent access). Escape-once fan-out cache retained.
 
 ---
 
 #### [`49c8643`](../../commit/49c8643) **[CRITICAL]** Fix two regressions — missing `now` variable and bytes/bytearray crash in epoll send.
 Two bugs from our own commits: (1) `now` variable not defined in rate_entry eviction scope (from commit 93b7273) — `NameError` every 5 seconds breaking ALL Transport jobs. (2) `del bytearray[:n]` on `transmit_buffer` type mismatch. Root cause of "Could not find path to destination" — server accepted clients but sent them zero data.
 
+**Fix:** (1) Added `now = time.time()` before eviction loop. (2) Added `isinstance` check with bytearray fast path and bytes fallback.
+
 ---
 
 #### [`8a69291`](../../commit/8a69291) **[HIGH]** IFAC mask O(n²)→bytearray, escape-once fan-out cache, tunnel_table Lock+atomic.
-Three fixes addressing production CPU spikes:
+Three CPU bottlenecks: (1) `Transport.transmit()` IFAC mask uses per-byte `bytes` concatenation — O(n²) on every outgoing packet. (2) `HDLC.escape()` called separately for each of N clients — redundant work. (3) `save_tunnel_table()` uses busy-wait boolean.
 
-1. `Transport.transmit()` IFAC mask: per-byte `bytes` concatenation → `bytearray` index assignment. Same O(n²) pattern as inbound unmask, called for every outgoing packet on every interface.
-
-2. `BackboneClientInterface.process_outgoing()`: escape-once fan-out cache. When Transport sends the same `packet.raw` to N connected clients, `HDLC.escape()` now runs once and the framed result is cached by `id(data)`. With 100 clients, this eliminates 99 redundant escape operations per packet — directly addresses the fan-out CPU bottleneck identified by py-spy.
-
-3. `save_tunnel_table()`: busy-wait boolean → `threading.Lock(timeout=5)` + atomic write via `os.replace()`. Completes the set — all three persist functions (`packet_hashlist`, `path_table`, `tunnel_table`) now use proper locking and atomic writes.
+**Fix:** (1) IFAC mask → `bytearray` index assignment. (2) Escape-once fan-out cache by `id(data)` — with 100 clients, eliminates 99 redundant escape operations per packet. (3) `threading.Lock(timeout=5)` + atomic `os.replace()`.
 
 ---
 
 #### [`ad6f2b9`](../../commit/ad6f2b9) **[MEDIUM]** Replace busy-wait booleans with threading.Lock in save_packet_hashlist and save_path_table.
-Same pattern as `save_known_destinations` (c9d0d41): boolean flag with `sleep(0.2)` polling loop replaced with `threading.Lock(timeout=5)`. Both functions also now write to `.tmp` then `os.replace()` for atomic file updates — prevents data corruption on crash mid-write. Lock released in `finally` block.
+Same pattern as `save_known_destinations` (c9d0d41): boolean flag with `sleep(0.2)` polling loop.
+
+**Fix:** `threading.Lock(timeout=5)`. Both functions also now write to `.tmp` then `os.replace()` for atomic file updates. Lock released in `finally` block.
 
 ---
 
 #### [`cd681fd`](../../commit/cd681fd) **[HIGH]** Reduce packet_hashlist maxsize from 1M to 128K — saves ~168MB RAM.
-`hashlist_maxsize` was 1,000,000 — two sets of 500K entries each consumed ~193MB. Packet dedup only needs seconds of history (duplicate packets arrive immediately, not hours later). Reduced to 128K (64K per set, ~25MB total). Swap frequency increases from every ~2.4 hours to every ~18 minutes on a busy node — acceptable tradeoff for 168MB savings. Makes Reticulum viable on 512MB devices again.
+`hashlist_maxsize` was 1,000,000 — two sets of 500K entries each consumed ~193MB. Packet dedup only needs seconds of history (duplicate packets arrive immediately, not hours later).
+
+**Fix:** Reduced to 128K (64K per set, ~25MB total). Swap frequency increases from every ~2.4 hours to every ~18 minutes on a busy node — acceptable tradeoff for 168MB savings.
 
 ---
 
 #### [`101de36`](../../commit/101de36) **[HIGH]** spawned_interfaces O(n²)→O(1), receipts/timestamps→deque, path_table LRU cap.
-Three data structure fixes:
+Three data structure issues: (1) `spawned_interfaces` uses `while x in list: list.remove(x)` — O(n²) on disconnect with 100+ clients. (2) `Transport.receipts.pop(0)` is O(n). (3) `path_table` unbounded — ~270 entries/hour, 45K+ in a week.
 
-1. `spawned_interfaces` list → dict keyed by `id(interface)`. The `while x in list: list.remove(x)` pattern on client disconnect was O(n²). With 100+ clients, each disconnect scanned and shifted the entire list. Now O(1) via `dict.pop()`.
-
-2. `Transport.receipts` list → `collections.deque`. `pop(0)` on a list is O(n). `rate_entry["timestamps"]` → `deque(maxlen=16)` with auto-eviction (eliminates the `while len > max: pop(0)` loop entirely).
-
-3. `Transport.path_table` capped at 16,384 entries with LRU eviction. Path table was unbounded — growing ~270 entries/hour on a transport node, reaching 45K+ entries in a week. When over capacity, oldest entries (by timestamp) are sorted and evicted in `jobs()`. Existing 7-day TTL cleanup remains unchanged.
+**Fix:** (1) `spawned_interfaces` list → dict keyed by `id(interface)`. (2) `receipts` → `collections.deque`; `rate_entry["timestamps"]` → `deque(maxlen=16)`. (3) `MAX_PATH_TABLE = 16384` with LRU eviction by oldest timestamp.
 
 ---
 
 #### [`36e8ba6`](../../commit/36e8ba6) **[CRITICAL]** Replace O(n²) bytes operations with bytearray across entire packet pipeline.
 Production py-spy profiling showed `process_outgoing` consuming 88% CPU on a node with 100+ clients. Root cause: every buffer operation uses immutable `bytes` — each `+=`, `replace()`, and slice creates a full copy. IFAC unmask in `Transport.inbound()` was worst: per-byte `bytes([b ^ mask[i]])` concatenation in a loop — O(n²) on every inbound packet.
 
-**Fix:**
-- `Transport.py`: IFAC unmask → `bytearray` with in-place index XOR assignment (O(n) instead of O(n²))
-- `BackboneInterface.py`: `transmit_buffer` and `frame_buffer` → `bytearray`; `.extend()` for append, `del buf[:n]` for consume instead of slice copy
-- `BackboneInterface.py`, `TCPInterface.py`, `LocalInterface.py`: HDLC constants pre-computed as module-level bytes (`_FLAG_BYTE`, `_ESC_BYTE`, `_ESC_ESC`, `_ESC_FLAG`); `escape()` and unescape use pre-computed constants instead of `bytes([x])` per call
-
-Before: ~508 memory allocations per packet transiting 100 clients. After: in-place operations, zero intermediate copies for buffer ops.
+**Fix:** IFAC unmask → `bytearray` with in-place index XOR assignment. `frame_buffer` → `bytearray` with `.extend()` and `del buf[:n]`. HDLC constants pre-computed as module-level bytes across BackboneInterface, TCPInterface, LocalInterface.
 
 ---
 
 #### [`1d74b3b`](../../commit/1d74b3b) **[MONITORING]** Add cumulative client connection counter to exporter.
-`rns_interface_clients` is a gauge (current connections only). No way to see historical connection trends — Grafana panel showed a single number with no history.
+`rns_interface_clients` is a gauge (current connections only). No way to see historical connection trends.
 
 **Fix:** Added `rns_interface_clients_total` counter that tracks cumulative connections by detecting client count increases between collection cycles. Added "Connected Clients (history)" timeseries panel to Grafana dashboard.
 
