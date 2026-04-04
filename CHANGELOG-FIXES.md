@@ -2,6 +2,11 @@
 All fixes target the upstream Reticulum 1.1.4 codebase.
 Branch: `fixes/transport-stability`
 
+
+#### [\`$(git rev-parse --short HEAD)\`](../../commit/$(git rev-parse --short HEAD)) **[HIGH]** Aggressive stale path cleanup — 48h TTL and hop sanity limit.
+Stale paths with dead next-hop nodes cause "Could not establish link" — link request packets are sent into dead routes and timeout. Two changes: (1) `DESTINATION_TIMEOUT` reduced from 7 days to 48 hours — paths not refreshed by a new announce are pruned faster. (2) Hop count sanity check during `jobs()` cleanup — paths with more than 64 hops (half of `PATHFINDER_M=128`) are removed. In production, 115-hop and 24-hop routes were observed polluting the path table. Confirmed fix: clearing stale `destination_table` immediately resolved page loading failures.
+
+---
 #### [`8a69291`](../../commit/8a69291) **[HIGH]** IFAC mask O(n²)→bytearray, escape-once fan-out cache, tunnel_table Lock+atomic.
 Three fixes addressing production CPU spikes:
 
