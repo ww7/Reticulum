@@ -851,6 +851,7 @@ class Transport:
                     Transport.tables_last_culled = time.time()
 
                     # Cull stale announce rate entries (no activity for 1 hour)
+                    now = time.time()
                     stale_rate_entries = []
                     for destination_hash in Transport.announce_rate_table:
                         rate_entry = Transport.announce_rate_table[destination_hash]
@@ -1215,6 +1216,9 @@ class Transport:
                             interface.sent_announce()
                         packet_sent(packet)
                         sent = True
+                    else:
+                        if packet.packet_type == RNS.Packet.ANNOUNCE and hasattr(interface, "parent_interface") and interface.parent_interface != None:
+                            RNS.log(f"Announce blocked on spawned {interface} OUT={interface.OUT} mode={interface.mode} queued={len(getattr(interface,'announce_queue',[]))}", RNS.LOG_DEBUG)
 
         Transport.jobs_locked = False
         return sent

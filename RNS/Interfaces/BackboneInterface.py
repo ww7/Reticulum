@@ -299,7 +299,10 @@ class BackboneInterface(Interface):
                                         except Exception as e: RNS.log(f"Error while closing socket for {spawned_interface}: {e}", RNS.LOG_ERROR)
                                         spawned_interface.receive(b"")
 
-                                    del spawned_interface.transmit_buffer[:written]
+                                    if isinstance(spawned_interface.transmit_buffer, bytearray):
+                                        del spawned_interface.transmit_buffer[:written]
+                                    else:
+                                        spawned_interface.transmit_buffer = bytearray(spawned_interface.transmit_buffer[written:])
                                     if len(spawned_interface.transmit_buffer) == 0: BackboneInterface.epoll.modify(fileno, select.EPOLLIN)
                                     spawned_interface.txb += written
                                     if spawned_interface.parent_interface: spawned_interface.parent_interface.txb += written
