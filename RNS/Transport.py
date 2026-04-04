@@ -959,23 +959,16 @@ class Transport:
                 # Assemble new payload with IFAC
                 new_raw    = new_header+ifac+raw[2:]
                 
-                # Mask payload
-                i = 0; masked_raw = b""
-                for byte in new_raw:
+                # Mask payload in-place using bytearray (O(n) instead of O(n²))
+                masked_raw = bytearray(new_raw)
+                for i in range(len(new_raw)):
                     if i == 0:
-                        # Mask first header byte, but make sure the
-                        # IFAC flag is still set
-                        masked_raw += bytes([byte ^ mask[i] | 0x80])
+                        masked_raw[i] = new_raw[i] ^ mask[i] | 0x80
                     elif i == 1 or i > interface.ifac_size+1:
-                        # Mask second header byte and payload
-                        masked_raw += bytes([byte ^ mask[i]])
-                    else:
-                        # Don't mask the IFAC itself
-                        masked_raw += bytes([byte])
-                    i += 1
+                        masked_raw[i] = new_raw[i] ^ mask[i]
 
                 # Send it
-                interface.process_outgoing(masked_raw)
+                interface.process_outgoing(bytes(masked_raw))
 
             else:
                 interface.process_outgoing(raw)
@@ -3090,21 +3083,16 @@ class Transport:
             gc.collect()
 
 
+    _saving_tunnel_table_lock = threading.Lock()
+
     @staticmethod
     def save_tunnel_table():
         if not Transport.owner.is_connected_to_shared_instance:
-            if hasattr(Transport, "saving_tunnel_table"):
-                wait_interval = 0.2
-                wait_timeout = 5
-                wait_start = time.time()
-                while Transport.saving_tunnel_table:
-                    time.sleep(wait_interval)
-                    if time.time() > wait_start+wait_timeout:
-                        RNS.log("Could not save tunnel table to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
-                        return False
+            if not Transport._saving_tunnel_table_lock.acquire(timeout=5):
+                RNS.log("Could not save tunnel table to storage, waiting for previous save operation timed out.", RNS.LOG_ERROR)
+                return False
 
             try:
-                Transport.saving_tunnel_table = True
                 save_start = time.time()
                 RNS.log("Saving tunnel table to storage...", RNS.LOG_DEBUG)
 
@@ -3149,9 +3137,11 @@ class Transport:
                     serialised_tunnels.append(serialised_tunnel)
 
                 tunnels_path = RNS.Reticulum.storagepath+"/tunnels"
-                file = open(tunnels_path, "wb")
+                tmp_path = tunnels_path + ".tmp"
+                file = open(tmp_path, "wb")
                 file.write(umsgpack.packb(serialised_tunnels))
                 file.close()
+                os.replace(tmp_path, tunnels_path)
 
                 save_time = time.time() - save_start
                 if save_time < 1: time_str = str(round(save_time*1000,2))+"ms"
@@ -3161,7 +3151,8 @@ class Transport:
             except Exception as e:
                 RNS.log("Could not save tunnel table to storage, the contained exception was: "+str(e), RNS.LOG_ERROR)
 
-            Transport.saving_tunnel_table = False
+            finally:
+                Transport._saving_tunnel_table_lock.release()
             gc.collect()
 
     @staticmethod

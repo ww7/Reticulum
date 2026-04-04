@@ -446,6 +446,11 @@ class BackboneClientInterface(Interface):
     MAX_FRAME_BUFFER = 16 * 1024 * 1024  # 16MB cap to prevent unbounded growth
     MAX_TRANSMIT_BUFFER = 16 * 1024 * 1024  # 16MB cap for outbound queue
 
+    # Escape-once cache: when the same packet data is sent to multiple clients,
+    # HDLC.escape() is called once and the framed result is reused.
+    _escape_cache_id = None
+    _escape_cache_frame = None
+
     RECONNECT_WAIT = 5
     RECONNECT_MAX_WAIT = 300
     RECONNECT_MAX_TRIES = None
@@ -643,10 +648,18 @@ class BackboneClientInterface(Interface):
     def process_outgoing(self, data):
         if self.online and not self.detached:
             try:
-                escaped = HDLC.escape(data)
-                self.transmit_buffer.extend(HDLC._FLAG_BYTE)
-                self.transmit_buffer.extend(escaped)
-                self.transmit_buffer.extend(HDLC._FLAG_BYTE)
+                # Escape-once optimization: cache framed data by object identity.
+                # When Transport fans out the same packet.raw to N clients,
+                # id(data) is identical for all calls, so escape runs once.
+                data_id = id(data)
+                if BackboneClientInterface._escape_cache_id == data_id:
+                    framed = BackboneClientInterface._escape_cache_frame
+                else:
+                    escaped = HDLC.escape(data)
+                    framed = HDLC._FLAG_BYTE + escaped + HDLC._FLAG_BYTE
+                    BackboneClientInterface._escape_cache_id = data_id
+                    BackboneClientInterface._escape_cache_frame = framed
+                self.transmit_buffer.extend(framed)
                 if len(self.transmit_buffer) > BackboneClientInterface.MAX_TRANSMIT_BUFFER:
                     RNS.log(f"Transmit buffer overflow on {self}, dropping oldest data ({len(self.transmit_buffer)} bytes)", RNS.LOG_WARNING)
                     self.transmit_buffer = bytearray(self.transmit_buffer[-BackboneClientInterface.MAX_TRANSMIT_BUFFER:])
